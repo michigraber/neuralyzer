@@ -1,4 +1,4 @@
 
 # NEURALYZER
 
-A neuroscience analysis tool in python.
+A neuroscience data analysis tool in python.
