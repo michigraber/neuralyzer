@@ -33,6 +33,7 @@ def _create_logger(**kwargs):
 
     logger = logging.getLogger(LOGGERNAME)
     logger.setLevel(logging.DEBUG)
+    logger.propagate = False
 
     # FORMATTER
     formatter = logging.Formatter(
