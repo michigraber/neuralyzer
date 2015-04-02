@@ -7,6 +7,12 @@ import os
 import re
 import importlib
 
+import numpy as np
+
+from neuralyzer.io import cache
+from neuralyzer import log
+
+
 def io_plugins():
     # might not be the most beautiful solution to the plugin problem
     ps = {}
@@ -28,22 +34,38 @@ class DataHandler(object):
     A class taking care of your data (IO).
     '''
 
-    def __init__(self, root_path=''):
+    def __init__(self, root_path='', logger=log.get_logger()):
         self._root_path = os.path.abspath(root_path)
         if not os.path.isdir(self.root_path):
             raise ValueError('The root_path provided is not a directory.')
+        self.logger = logger
+        self.logger.debug('root_path set to %s' % self._root_path)
 
     @property
     def root_path(self):
         return self._root_path
 
-    def get_data(self, filename):
-        extension = os.path.splitext(filename)[1][1:]
-        if os.path.isabs(filename):
-            filepath = filename
-        else:
-            filepath = os.path.join(self.root_path, filename)
-        return io_plugins()[extension].Loader.get_data(filepath)
+    def get_data(self, filename, cache_data=True):
+        # get absolute path
+        if os.path.isabs(filename): filepath = filename
+        else: filepath = os.path.join(self.root_path, filename)
+        dcache = cache.DataCache(filepath)
+        try:
+            data = dcache.get_cached_data()
+            self.logger.info('loaded data from cache file: %s' % dcache.cache_filepath)
+        except:
+            extension = os.path.splitext(filename)[1][1:]
+            data = io_plugins()[extension].Loader.get_data(filepath)
+            self.logger.info('loaded data from file: %s' % filepath)
+            if cache_data:
+                try:
+                    from neuralyzer.io.cache import DataCache 
+                    dcache = DataCache(filepath)
+                    dcache.save_data_cache(data)
+                    self.logger.info('saved data to cache: %s' % dcache.cache_filepath)
+                except:
+                    self.logger.info('Could not save cache.')
+        return data
 
     def get_listdir(self, path='', pat=r''):
         if not os.path.isabs(path):
