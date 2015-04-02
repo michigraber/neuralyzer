@@ -12,9 +12,11 @@ def parse_args(args=sys.argv[1:]):
    parser = argparse.ArgumentParser(description=__doc__)
    parser.add_argument('--filename', default='stack.tif', action='store')
    parser.add_argument('--dir', default='', action='store')
-   parser.add_argument('--pattern', default=r'\w*.tif', action='store')
+   parser.add_argument('--pattern', default=r'\w*.tif$', action='store')
    parser.add_argument('--verbose', action='store_true')
+   parser.add_argument('--nocache', action='store_false', help='generate faster loading cache files')
    return parser.parse_args(args)
+
 
 def main():
     import os
@@ -34,6 +36,10 @@ def main():
     tiffutils.write_tifffile(filepath, imarray)
     if args.verbose:
         print('\nFile written to:  %s' % filepath)
+    if not args.nocache:
+        dcache = DataCache(filepath)
+        dcache.save_data_cache(imarray)
+
 
 if __name__ == '__main__':
     try:
