@@ -22,4 +22,3 @@ setup(
     scripts=['scripts/build_tiff_stack.py',],
     long_description=read('README.rst'),
 )
-
