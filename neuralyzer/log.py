@@ -22,7 +22,6 @@ def get_logger():
     if global_logger is None:
         logger = _create_logger()
         global_logger = logger
-	logger.info('NEURALYZER LOGGER STARTED.')
     else:
         logger = global_logger
     return logger
@@ -53,6 +52,7 @@ def _create_logger(**kwargs):
     ch.setFormatter(formatter)
     logger.addHandler(ch)
 
+    logger.info('NEURALYZER LOGGER CREATED')
     logger.debug('stdoutloglevel: '+stdoutloglevel)
 
     return logger
