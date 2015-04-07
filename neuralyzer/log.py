@@ -22,6 +22,7 @@ def get_logger():
     if global_logger is None:
         logger = _create_logger()
         global_logger = logger
+	logger.info('NEURALYZER LOGGER STARTED.')
     else:
         logger = global_logger
     return logger

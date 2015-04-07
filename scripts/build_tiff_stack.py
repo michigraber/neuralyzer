@@ -26,21 +26,27 @@ def parse_args(args=sys.argv[1:]):
 def main():
     import os
     from neuralyzer.utils import tiffutils
+    
     args = parse_args()
-    directory = os.path.abspath(args.dir)
+
+    # setting up the logger
+    from neuralyzer import log
     if args.verbose:
-        print("\n\nBuilding tif stack from files in %s matching r'%s'"\
-                % (directory, args.pattern))
+        log.STDOUT_LOGLEVEL = 'DEBUG'
+        log.FILE_LOGLEVEL = 'DEBUG'
+    else:
+        log.STDOUT_LOGLEVEL = 'INFO'
+        log.FILE_LOGLEVEL = 'ERROR'
+    logger = log.get_logger()
+
+    directory = os.path.abspath(args.dir)
+    logger.info("### Building tif stack from files in %s matching r'%s'"\
+	    % (directory, args.pattern))
     imarray, imlist = tiffutils.imarray_from_files_in_directory(
             directory, pat=args.pattern)
-    if args.verbose:
-        print('\nIncluding the following files:')
-        for fn, _ in imlist:
-            print(fn)
     filepath = os.path.abspath(args.filename)
     tiffutils.write_tifffile(filepath, imarray)
-    if args.verbose:
-        print('\nFile written to:  %s' % filepath)
+    logger.info('File written to:  %s' % filepath)
     if not args.nocache:
         dcache = DataCache(filepath)
         dcache.save_data_cache(imarray)

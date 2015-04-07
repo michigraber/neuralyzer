@@ -52,11 +52,11 @@ class DataHandler(object):
         dcache = cache.DataCache(filepath)
         try:
             data = dcache.get_cached_data()
-            self.logger.info('loaded data from cache file: %s' % dcache.cache_filepath)
+            self.logger.debug('loaded data from cache file: %s' % dcache.cache_filepath)
         except:
             extension = os.path.splitext(filename)[1][1:]
             data = io_plugins()[extension].Loader.get_data(filepath)
-            self.logger.info('loaded data from file: %s' % filepath)
+            self.logger.debug('loaded data from file: %s' % filepath)
             if cache_data:
                 try:
                     from neuralyzer.io.cache import DataCache 
@@ -64,7 +64,7 @@ class DataHandler(object):
                     dcache.save_data_cache(data)
                     self.logger.info('saved data to cache: %s' % dcache.cache_filepath)
                 except:
-                    self.logger.info('Could not save cache.')
+                    self.logger.error('Could not save cache.')
         return data
 
     def get_listdir(self, path='', pat=r''):
