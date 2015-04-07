@@ -13,18 +13,23 @@ def imarray_from_files_in_directory(directory, pat=r'\w*.tif'):
     from ..io import data_handler
 
     dh = data_handler.DataHandler(root_path=directory)
-    imagelist = dh.get_listdir(pat=pat, cache_data=False)
+    imagelist = dh.get_listdir(pat=pat)
     if not any(imagelist):
         raise ValueError(('Specified directory contains no files matching the'
             ' regexp pattern.'))
+    imagelist = sorted([i[0] for i in imagelist])
 
-    firstdata = dh.get_data(imagelist[0][0], )
+    firstdata = dh.get_data(imagelist[0], cache_data=False)
+    if len(firstdata.shape) == 2:
+	shape = firstdata.shape
+    elif len(firstdata.shape) == 3:
+        shape = firstdata.shape[1:]
     NImages = len(imagelist)
-    imarray = np.zeros((NImages, firstdata.shape[0], firstdata.shape[1]),
+    imarray = np.zeros((NImages, shape[0], shape[1]),
             firstdata.dtype)
     
     for imind in range(NImages):
-        imarray[imind,:,:]= dh.get_data(imagelist[imind][0])
+        imarray[imind,:,:]= dh.get_data(imagelist[imind], cache_data=False)
 
     return imarray, imagelist
 
