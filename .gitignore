@@ -1,6 +1,8 @@
 *.pyc
 *.pyo
 
+*.ipynb_checkpoints
+
 *.swp
 
 *.egg-info
