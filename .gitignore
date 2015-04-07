@@ -1,7 +1,10 @@
 *.pyc
 *.pyo
 
-*.ipynb_checkpoints
+*.ipynb_checkpoints*
+
+build/*
+dist/*
 
 *.swp
 
