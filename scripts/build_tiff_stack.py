@@ -11,12 +11,15 @@ def parse_args(args=sys.argv[1:]):
    import argparse
    parser = argparse.ArgumentParser(description=__doc__,
            formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-   parser.add_argument('--filename', default='stack.tif', action='store')
-   parser.add_argument('--dir', default='', action='store')
-   parser.add_argument('--pattern', default=r'\w*.tif$', action='store')
-   parser.add_argument('--verbose', action='store_true')
+   parser.add_argument('--filename', default='stack.tif', action='store',
+           help='The filename of the output stack. (default is stack.tiff)')
+   parser.add_argument('--dir', default='', action='store',
+           help='The path to the directory to load tiff files from. (default is current directory.)')
+   parser.add_argument('--pattern', default=r'\w*.tif$', action='store',
+           help='The regexp pattern for filename selection.')
+   parser.add_argument('--verbose', action='store_true',)
    parser.add_argument('--nocache', action='store_false',
-           help='generate faster loading cache files')
+           help='Generate faster loading cache files.')
    return parser.parse_args(args)
 
 
