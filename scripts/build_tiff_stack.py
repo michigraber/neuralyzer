@@ -12,9 +12,9 @@ def parse_args(args=sys.argv[1:]):
    parser = argparse.ArgumentParser(description=__doc__,
            formatter_class=argparse.ArgumentDefaultsHelpFormatter)
    parser.add_argument('--filename', default='stack.tif', action='store',
-           help='The filename of the output stack. (default is stack.tiff)')
+           help='The filename of the output stack.')
    parser.add_argument('--dir', default='', action='store',
-           help='The path to the directory to load tiff files from. (default is current directory.)')
+           help='The path to the directory to load tiff files from.')
    parser.add_argument('--pattern', default=r'\w*.tif$', action='store',
            help='The regexp pattern for filename selection.')
    parser.add_argument('--verbose', action='store_true',)
