@@ -1,10 +1,13 @@
 '''
 '''
 
+from .. import log
+
+
 CHANNEL_FILENAME = '{base}_channel{nr}.tiff'
 
 def extract_channels_from_raw_file(filepath, imsize=(512,512), numchannels=4,
-        extract_channels=(0,1), cache_data=True):
+        extract_channels=(0,1), cache_data=True, logger=log.get_logger()):
     ''' Loads a raw image stack file and extracts its stacked channels.
     '''
     from ..io import data_handler, cache

@@ -42,13 +42,12 @@ def main():
     logger = log.get_logger()
 
     directory = os.path.abspath(args.dir)
-    logger.info("### Building tif stack from files in %s matching r'%s'"\
-	    % (directory, args.pattern))
-    imarray, imlist = tiffutils.imarray_from_files_in_directory(
-            directory, pat=args.pattern)
+    logger.info("### Extracting channels from raw file %s"\
+	    % ( args.rawfile))
+    imarray, imlist = rawutils.extract_channels_from_raw_file(
+            args.rawfile, imsize=(int(args.imheight), int(args.imwidth))
+            cache_data=not(args.nocache), logger=logger)
     filepath = os.path.abspath(args.filename)
-    tiffutils.write_tifffile(filepath, imarray)
-    logger.info('File written to:  %s' % filepath)
     if not args.nocache:
         dcache = DataCache(filepath)
         dcache.save_data_cache(imarray)
