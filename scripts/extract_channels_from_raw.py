@@ -6,7 +6,7 @@ tiff stacks.
 '''
 
 from __future__ import print_function
-import sys
+import sys, traceback
 
 
 def parse_args(args=sys.argv[1:]):
@@ -20,7 +20,7 @@ def parse_args(args=sys.argv[1:]):
    parser.add_argument('--imheight', default='512', action='store',
            help='The height of the images in the stack.')
    parser.add_argument('--verbose', action='store_true',)
-   parser.add_argument('--nocache', action='store_false',
+   parser.add_argument('--nocache', action='store_true',
            help='Do not generate faster loading cache files.')
    return parser.parse_args(args)
 
@@ -41,22 +41,18 @@ def main():
         log.FILE_LOGLEVEL = 'ERROR'
     logger = log.get_logger()
 
-    directory = os.path.abspath(args.dir)
     logger.info("### Extracting channels from raw file %s"\
-	    % ( args.rawfile))
-    imarray, imlist = rawutils.extract_channels_from_raw_file(
-            args.rawfile, imsize=(int(args.imheight), int(args.imwidth))
+	    % (args.rawfile))
+    logger.debug('args: %s' % args)
+    rawutils.extract_channels_from_raw_file(args.rawfile,
+            imsize=(int(args.imheight), int(args.imwidth)),
             cache_data=not(args.nocache), logger=logger)
-    filepath = os.path.abspath(args.filename)
-    if not args.nocache:
-        dcache = DataCache(filepath)
-        dcache.save_data_cache(imarray)
 
 
 if __name__ == '__main__':
     try:
         main()
     except Exception, err:
-        print('\nAn error ocurred:\n')
-        print(err)
-        print()
+	ex_type, ex, tb = sys.exc_info()
+        print('\nAn error ocurred: %s\n' % ex)
+        traceback.print_tb(tb)

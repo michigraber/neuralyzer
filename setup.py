@@ -21,6 +21,9 @@ setup(
         'neuralyzer.io.plugins',
         'neuralyzer.utils',
         ],
-    scripts=['scripts/build_tiff_stack.py',],
+    scripts=[
+	'scripts/build_tiff_stack.py',
+	'scripts/extract_channels_from_raw.py',
+        ],
     long_description=read('README.rst'),
 )

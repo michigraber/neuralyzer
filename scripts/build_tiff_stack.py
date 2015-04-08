@@ -18,7 +18,7 @@ def parse_args(args=sys.argv[1:]):
    parser.add_argument('--pattern', default=r'\w*.tif$', action='store',
            help='The regexp pattern for filename selection.')
    parser.add_argument('--verbose', action='store_true',)
-   parser.add_argument('--nocache', action='store_false',
+   parser.add_argument('--nocache', action='store_true',
            help='Generate faster loading cache files.')
    return parser.parse_args(args)
 
@@ -56,6 +56,6 @@ if __name__ == '__main__':
     try:
         main()
     except Exception, err:
-        print('\nAn error ocurred:\n')
-        print(err)
-        print()
+        print('\nAn error ocurred: %s\n' % ex)
+	ex_type, ex, tb = sys.exc_info()
+        traceback.print_tb(tb)
