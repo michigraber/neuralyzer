@@ -45,7 +45,7 @@ class DataHandler(object):
     def root_path(self):
         return self._root_path
 
-    def get_data(self, filename, cache_data=True):
+    def get_data(self, filename, cache_data=True, **kwargs):
         # get absolute path
         if os.path.isabs(filename): filepath = filename
         else: filepath = os.path.join(self.root_path, filename)
@@ -55,7 +55,7 @@ class DataHandler(object):
             self.logger.debug('loaded data from cache file: %s' % dcache.cache_filepath)
         except:
             extension = os.path.splitext(filename)[1][1:]
-            data = io_plugins()[extension].Loader.get_data(filepath)
+            data = io_plugins()[extension].Loader.get_data(filepath, **kwargs)
             self.logger.debug('loaded data from file: %s' % filepath)
             if cache_data:
                 try:
