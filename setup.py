@@ -9,7 +9,7 @@ def read(fname):
 
 setup(
     name = "neuralyzer",
-    version = "0.0.1",
+    version = "0.0.1-dev",
     author = "Michael Graber",
     author_email = "michigraber@gmail.com",
     description = ("A neuroscience data analysis tool suite."),
