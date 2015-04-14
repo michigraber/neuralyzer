@@ -1,5 +1,5 @@
 
-def get_data(filename, cache_data=True):
+def get_data(filename, cache_data=True, **kwargs):
     ''' A function to load tiff data files and its faster loading caches.
 
     In case the file has been loaded previously and caching was enabled
@@ -15,4 +15,4 @@ def get_data(filename, cache_data=True):
           cache file.
      '''
     from ..io import data_handler
-    return data_handler.DataHandler().get_data(filename, cache_data=cache_data)
+    return data_handler.DataHandler().get_data(filename, cache_data=cache_data, **kwargs)
