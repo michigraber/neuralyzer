@@ -39,17 +39,34 @@ def gauss_kernel(size, var=None):
     return g / g.sum()
 
 
-def gaussian_blur_matrix(dim, kernelsize, kernelvariance):
-    kernel = gauss_kernel(kernelsize, kernelvariance).flatten()
-    kl = len(kernel)
-    D = np.zeros((dim, dim+kl-1))
+def gaussian_blur_matrix(imagesize, kernelsize, kernelvariance):
+    dim = imagesize[0]*imagesize[1]
+    D = np.zeros((dim, dim))
     for idx in range(dim):
-        D[idx,idx:idx+kl] = kernel
-    D = D[:,((kl-1)/2):-(kl-1)/2]
-    # !! D is symmetric
+        pos = (int(idx/imagesize[0]), np.mod(idx, imagesize[0]))
+        D[:,idx] = gaussian_blur_image(
+                imagesize, kernelsize, kernelvariance, pos
+                ).flatten()
     return D
 
 
+def gaussian_blur_image(imagesize, kernelsize, kernelvariance, position):
+    pos = position
+    ims = imagesize
+    ks = kernelsize
+    kernel = gauss_kernel(ks, kernelvariance)
+    # generate a padded image
+    im = np.zeros((ims[0]+ks-1, ims[1]+ks-1))
+    im[pos[0]:pos[0]+ks, pos[1]:pos[1]+ks] = kernel
+    # remove padding
+    im = im[int(ks/2):-int(ks/2), int(ks/2):-int(ks/2)]
+    return im
+
+
+
+
+
+"""
 def gaussian_blur_matrix_sparse(dim, kernelsize, kernelvariance):
     '''
     
@@ -68,3 +85,4 @@ def gaussian_blur_matrix_sparse(dim, kernelsize, kernelvariance):
         offsets.append(s-i)
     D = sps.dia_matrix((np.array(data), np.array(offsets)), shape=(dim, dim))
     return D
+"""
