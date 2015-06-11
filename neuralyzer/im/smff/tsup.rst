@@ -1,18 +1,18 @@
 
-
 ===============================================================================
 CALCIUM IMAGING MATRIX FACTORIZATION FRAMEWORK
 ===============================================================================
-based on Pnevmatikakis et al. 2014
+
+An implementation of Calcium Signal extraction, demixing and ROI estimation
+along the model and algorithm described in 
+
+> A structured matrix factorization framework for large scale calcium imaging
+> data analysis.
+
+by Pnevmatikakis et al. 2014
+
 
 
 DEV NOTES
 ===============================================================================
 
-`_update_A_b(C, A, b, f, Y)`
-
-minimize  ||A||_1
-
-
-
-`_update_C_f(C, A, b, f, Y)`
