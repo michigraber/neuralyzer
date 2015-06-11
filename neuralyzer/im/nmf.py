@@ -1,5 +1,7 @@
 '''
+Non-Negative Matrix factorization implementations.
 
+!! EXPERIMENTAL !!
 
 '''
 
@@ -7,6 +9,8 @@ import numpy as np
 
 from neuralyzer.log import get_logger
 
+
+TINY_POSITIVE_NUMBER = np.finfo(np.float).tiny 
 
 def nmf_cvxpy(A, k, max_iter=30):
     '''
@@ -148,11 +152,15 @@ class NMF_L0(object):
     Non-negative Matrix and Tensor Factorization, IEEE 2008
     '''
 
-    def __init__(self, alpha=1.0, iterations=200):
-        self.alpha = alpha
+    def __init__(self, spl0=0.3, iterations=100):
+        self._spl0 = spl0
         # TODO: iterations will have to be replaced by a stop criterion,
         # based on a the residual and max_iterations!
         self.iterations = iterations 
+
+    @property
+    def spl0(self):
+        return self._spl0
 
 
     def fit(self, V, H_init=None, W_init=None, k=None):
@@ -165,26 +173,41 @@ class NMF_L0(object):
             self._H = np.random.rand(k, self.v_shape[1])
         else:
             self._H = H_init
+
         for i in range(self.iterations):
-            # FIXME : here i would like to change the order but i often run
-            # into numerical out of bounds errors ..
-            self._H = NMF_L0._update_H(self._W, V, alpha=self.alpha)
-            self._W = NMF_L0._update_W(V, self._H, self._W)
-            #self._H = NMF_L0._update_H(self._W, V, alpha=self.alpha)
+            self._W = NMF_L0._update_W(V, self._H, self._W).clip(
+                    TINY_POSITIVE_NUMBER, np.inf)
+            self._H = NMF_L0._update_H(self._W, V, spl0=self.spl0).clip(
+                    TINY_POSITIVE_NUMBER, np.inf)
 
 
     @staticmethod
-    def _update_H(W, V, alpha=1.0):
+    def _update_H(W, V, spl0=0.8):
         '''
         !!! WARNING : requires tweaked scikit-learn LassoLars implementation
         that allows non-negativity, ie positivity, constraint on H.
         '''
-        H = []
-        ll = LassoLars(positive=True, alpha=alpha)
+        #ll = LassoLars(positive=True, alpha=alpha)
+
         # TODO: can be paralellized along V dim 1, not zero!
+        hs = []
+        alphas = []
         for n in range(V.shape[1]):
+            ll = LARS(positive=True)
             ll.fit(W, V[:,n])
-            H.append(ll.coef_)
+            alphas.append(ll.alphas_)
+            hs.append(ll.coef_path_)
+            
+        # SORT OUT H here according to sparseness criterion
+        alphs = np.concatenate(alphas)
+        # approximate l0 cut off
+        # TODO : this is problematic because coefficients can be dropped ..
+        numcomps = (1.-spl0)*V.shape[0]*V.shape[1]
+        cutoff = -np.percentile(-alphs, (1.-spl0)*100) 
+        H = []
+        for n in range(len(hs)):
+            H.append(hs[n][:, np.where((alphas[n] - cutoff) <= 0)[0][0]])
+
         H = np.array(H).T
         return H
 
@@ -218,3 +241,77 @@ class NMF_L0(object):
             )
         return W
 
+
+
+
+# LARS
+# -----------------------------------------------------------------------------
+# slim implementation of the sklearns LassoLars algorithm with a couple of
+# adaptations
+
+from sklearn.linear_model.least_angle import lars_path
+
+
+class LARS(object):
+
+    def __init__(self, n_nonzero_coefs=500, positive=True,
+            eps=np.finfo(np.float).eps, copy_X=True, max_iter=500,
+            ):
+
+        self.method = 'lasso'
+        self.positive = positive 
+        self.eps = eps
+        self.copy_X = copy_X
+        self.max_iter = max_iter
+
+
+    def fit(self, X, y, Xy=None, return_path=True, alpha_min=0.):
+
+        self._alpha_min = alpha_min
+
+        ### maybe do some checks on the inputs here
+        
+
+        ### set up
+        if self.copy_X:
+            X = X.copy()
+        n_features = X.shape[1]
+
+        if y.ndim == 1:
+            y = y[:, np.newaxis]
+        n_targets = y.shape[1]
+
+        self.alphas_ = []
+        self.n_iter_ = []
+
+        self.coef_ = []
+        self.active_ = []
+        self.coef_path_ = []
+
+        for k in xrange(n_targets):
+            this_Xy = None if Xy is None else Xy[:, k]
+            alphas, active, coef_path, n_iter_ = lars_path(
+                X, y[:, k], Gram=None, Xy=this_Xy, copy_X=self.copy_X,
+                copy_Gram=True, alpha_min=self._alpha_min, method=self.method,
+                max_iter=self.max_iter, eps=self.eps, return_path=return_path,
+                return_n_iter=True, positive=self.positive)
+            self.alphas_.append(alphas)
+            self.active_.append(active)
+            self.n_iter_.append(n_iter_)
+            if return_path:
+                self.coef_path_.append(coef_path)
+                self.coef_.append(coef_path[:, -1])
+            else:
+                self.coef_.append(coef_path)
+
+        if n_targets == 1:
+            self.n_iter_ = self.n_iter_[0]
+            if return_path:
+                self.alphas_, self.active_, self.coef_path_, self.coef_ = [
+                    a[0] for a in (self.alphas_, self.active_, self.coef_path_,
+                                   self.coef_)]
+            else:
+                self.alphas_, self.active_, self.coef_ = [
+                    a[0] for a in (self.alphas_, self.active_, self.coef_)]
+
+        return self
