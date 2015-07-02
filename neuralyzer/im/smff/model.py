@@ -12,6 +12,7 @@ by Pnevmatikakis et al. 2014
 import numpy as np
 
 from sklearn import linear_model 
+from sklearn.decomposition.nmf import _nls_subproblem
 
 from neuralyzer.im import nmf
 from neuralyzer import log
@@ -27,47 +28,30 @@ TINY_POSITIVE_NUMBER = np.finfo(np.float).tiny
 # -----------------------------------------------------------------------------
 
 class SMFF(object):
-    ''' An non-negative matrix factorization approach for calcium imaging data.
-
+    ''' A non-negative matrix factorization approach for calcium imaging data.
     
-    A calcium imaging dataset Y, [Y] = p x T, is factorized according to
+    A calcium imaging dataset Y, [Y] = d x T, is factorized according to
 
     Y = AC + bf.T
 
-    with [A] = p x k, [C] = k x T, [b] = p x 1, [f] = T x 1
+    with [A] = d x k, [C] = k x T, [b] = d x 1, [f] = T x 1
     '''
 
     def __init__(self, *args, **kwargs):
         self.logger = kwargs.pop('logger', logger)
-
-        self.max_iter = kwargs.pop('max_iter', 100)
-        self._step = 0
-
-        self.alpha_sel = kwargs.pop('alpha_sel', 5.0)
-        self.alpha_fit = kwargs.pop('alpha_fit', 0.01)
-
-        self._model_params = ('A', 'C', 'f', 'b')
         self._init_params = {} 
         # check for initialization parameters
-        for ini in self.model_params:
+        for ini in ('A', 'C', 'f', 'b'):
             self._init_params[ini] = kwargs.pop(ini, None)
-            if ini in kwargs:
-                self._init_params[ini] = kwargs[ini]
+
 
     def _stop(self):
         '''
         simple interation number based stop criterion for now
         '''
-
         # alternatively we could calculate the residual and estimate whether it
         # behaves noise style ..
-
-        return self._step >= self.max_iter
-
-
-    @property
-    def model_params(self):
-        return self._model_params
+        return self._step >= self.max_num_iterations
 
 
     def init_model(self, *args, **kwargs):
@@ -79,58 +63,133 @@ class SMFF(object):
         self._init_params['f'] = f
 
 
-    def fit_model(self, Y, **kwargs):
+    def fit_model(self, Y, max_num_iterations=10, re_init=True, morph=True,
+            temp_update_method='projgrad', **kwargs):
+        ''''
 
-        self.C = self._init_params['C'].copy()
-        self.A = self._init_params['A'].copy()
-        self.b = self._init_params['b'].copy()
-        self.f = self._init_params['f'].copy()
+        DEPENDING ON THE METHODS CHOSEN YOU CAN PROVIDE DIFFERENT KEYWORD
+        ARGUMENTS 
+
+        in any case:
+            - temporal_update_method : default='projgrad', 'multiplicative',
+              'cvx_foopsie'
+            - morph : apply morphological smoothing of spatial components
+              (default=True)
+            - re_init : initialize model parameters from scratch with stored
+              parameters (default=True)
+            - spl0 : l0 sparseness measure for spatial components (will be
+              removed)
+        
+       temporal update projgrad (default):
+           - tolH (1e-4)
+           - maxiter (200)
+        '''
 
         self.logger.info('Fitting SMFF to data Y.')
         self.logger.debug('[Y] = '+str(Y.shape))
-    
+
+        _spl0 = kwargs.pop('spl0', 0.97)
+
+        if re_init:
+            self.C = self._init_params['C'].copy()
+            self.A = self._init_params['A'].copy()
+            self.b = self._init_params['b'].copy()
+            self.f = self._init_params['f'].copy()
+            self._step = 0
+            self.max_num_iterations = max_num_iterations
+            self._avg_abs_res = []
+
         while not self._stop():
-            self.logger.info('iteration %s / %s ' % (self._step+1, self.max_iter))
-            self._step += 1
-            # UPDATE A, b
-            self.A, self.b = self._update_A_b(self.C, self.A, self.b, self.f, Y)
+            self.logger.info('iteration %s / %s ' % \
+                    (self._step+1, self.max_num_iterations))
+
+            # UPDATE A, b -----------------------------------------------------
+            self.A, self.b = SMFF.update_A_b(self.C, self.A, self.b, self.f, Y,
+                    spl0=_spl0, logger=self.logger)
             # ROI component post processing
-            self.A = _morph_image_components(self.A)
-            # UPDATE C, f
-            self.C, self.f = self._update_C_f(self.C, self.A, self.b, self.f, Y)
+            if morph:
+                self.A = _morph_image_components(self.A)
+            # UPDATE C, f -----------------------------------------------------
+            self.C, self.f = SMFF.update_C_f(self.C, self.A, self.b, self.f, Y,
+                    method=temp_update_method, logger=self.logger, **kwargs)
+            # ROI Merging -----------------------------------------------------
+            # TODO
+            # RESIDUAL CALCULATION --------------------------------------------
+            mean_residual = np.abs(self.residual(Y)).mean()
+            self.logger.info('avg absolute residual = %s ' % mean_residual)
+            self._avg_abs_res.append(mean_residual)
 
+            # update counter after completion of entire step
+            self._step += 1
 
-    def _update_C_f(self, C, A, b, f, Y):
+    
+    @staticmethod
+    def update_C_f(C, A, b, f, Y, **kwargs):
         '''
-        minimize \sum (1 G c_j)
-        subject to Gc_j >= 0, ||Y(i,:) - A(i,:)C - b(i)f.T || < \sigma_i * sqrt(T)
-
-        NOOOOOOT! (for now)
         '''
-        # recast the variables
-        V = Y.T
-        H = np.vstack([A.T, b])
-        W = np.vstack([C, f.T]).T
-        # multiplicative update
-        W_ = nmf.NMF_L0._update_W(V, H, W)
-        
-        C = W_[:, :-1].T
-        f = W_[:, -1].T 
+
+        # TODO : FIX VARIABLE NAMES / NOMENCLATURE FOR BETTER TRANSPARENCY
+
+        method = kwargs.pop('method', 'projgrad')
+
+        logger = kwargs.pop('logger', None)
+        if logger: logger.debug('Updating C and f with method "%s".' % method)
+
+        # adding the background data to the matrices
+        W = np.hstack((A, b))
+        H = np.vstack((C, f))
+
+        if method == 'projgrad':
+            tolH = kwargs.get('tolH', 1e-4)
+            maxiter = kwargs.get('maxiter', 200)
+            # TODO : do we need to clip here too?? (see multiplicative)
+            # .clip(TINY_POSITIVE_NUMBER, np.inf)
+            # using the modified scikit-learn project gradient _nls_subproblem
+            # update.
+            H_, grad, n_iter = _nls_subproblem(Y, W, H, tolH, maxiter)
+            # rearrangement of output 
+            C = H_[:-1, :]
+            f = H_[-1, :]
+            f = f[:, np.newaxis].T
+
+        elif method == 'multiplicative':
+            # since this method is based on multiplication and divisions we
+            # need to ensure that we will not get infinity errors
+            W = W.clip(TINY_POSITIVE_NUMBER, np.inf)
+            H = H.clip(TINY_POSITIVE_NUMBER, np.inf)
+            # we call the multiplicative update from the Morup NMF implementation
+            W_ = nmf.NMF_L0.update_W(Y.T, W.T, H.T)
+            # rearrangement of output 
+            C = W_[:, :-1].T
+            f = W_[:, -1].T 
+            f = f[:, np.newaxis].T
+
+        elif method == 'cvx_foopsi':
+
+            resYA = np.dot(Y.T, W) - (H.T, np.dot(W.T, W))
+
 
         return C, f 
 
 
-    def _update_A_b(self, C, A, b, f, Y, spl0=0.95):
+    @staticmethod
+    def update_A_b(C, A, b, f, Y, **kwargs):
         '''
         minimize || A ||_1
         subject to : A, b >= 0, ||Y(i,:) - A(i,:)C - b(i)f.T || < \sigma_i * sqrt(T)
         '''
+        
+        spl0 = kwargs.get('spl0', 0.95)
+
+        logger = kwargs.pop('logger', None)
+        if logger: logger.debug('Updating A and b with spl0=%s' % spl0)
+
         A_, b_ = [], []
 
         # calculate background data
         if f.ndim == 1:
-            f = f[:, np.newaxis]
-        bg = np.dot(f, b).T
+            f = f[:, np.newaxis].T
+        bg = np.dot(b, f)
 
         # we need to keep all alphas and all hs so that we can cut based on the
         # alpha distribution post hoc -> need a better mechanism here! TODO
@@ -155,18 +214,18 @@ class SMFF(object):
         numcomps = (1.-spl0)*Y.shape[0]*Y.shape[1]
         cutoff = -np.percentile(-alphs, (1.-spl0)*100) 
 
-        # 3. calculate A and b
+        # 3. calculate A and b ------------------------------------------------
         H = []
         for n in range(len(hs)):
             relevant_h = hs[n][:, np.where((alphas[n] - cutoff) <= 0)[0][0]]
             comps = np.where(relevant_h)[0]
-            Cf = np.vstack([C[comps,:], f.T])
+            Cf = np.vstack([C[comps,:], f])
             y = Y[n]
             y = y[:, np.newaxis]
 
             # coefficient estimation : selected ROIs including b
             ll = nmf.LARS(positive=True)
-            ll.fit(Cf.T, Y[n], return_path=False, alpha_min=self.alpha_fit)
+            ll.fit(Cf.T, Y[n], return_path=False, alpha_min=0.)
 
             # append the coeffs
             a = np.zeros(A.shape[1])
@@ -178,7 +237,21 @@ class SMFF(object):
         b = np.array(b_)
         b = b[:, np.newaxis] # return a 2 dimensional array
 
-        return A, b.T
+        return A, b
+
+
+    def Y_hat(self):
+        ''' The estimated data using the current parameters on the model. '''
+        return np.dot(self.A, self.C) + np.dot(self.b, self.f)
+
+
+    def residual(self, Y):
+        ''' '''
+        return Y - self.Y_hat()
+
+
+
+# -----------------------------------------------------------------------------
 
 
 def _morph_image_components(H):
