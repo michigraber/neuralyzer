@@ -175,14 +175,14 @@ class NMF_L0(object):
             self._H = H_init
 
         for i in range(self.iterations):
-            self._W = NMF_L0._update_W(V, self._H, self._W).clip(
+            self._W = NMF_L0.update_W(V, self._H, self._W).clip(
                     TINY_POSITIVE_NUMBER, np.inf)
-            self._H = NMF_L0._update_H(self._W, V, spl0=self.spl0).clip(
+            self._H = NMF_L0.update_H(self._W, V, spl0=self.spl0).clip(
                     TINY_POSITIVE_NUMBER, np.inf)
 
 
     @staticmethod
-    def _update_H(W, V, spl0=0.8):
+    def update_H(W, V, spl0=0.8):
         '''
         !!! WARNING : requires tweaked scikit-learn LassoLars implementation
         that allows non-negativity, ie positivity, constraint on H.
@@ -213,7 +213,7 @@ class NMF_L0(object):
 
 
     @staticmethod
-    def _update_W(V, H, W):
+    def update_W(V, H, W):
         n, m = V.shape
         n, k = W.shape
         W = np.multiply(W,
