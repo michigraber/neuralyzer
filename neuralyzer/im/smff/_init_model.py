@@ -59,8 +59,6 @@ def _init_model(Y, gaussian_blur_memmap, num_components=1, ws=41,
         logger.info('component %s / %s ' % (k+1, num_components))
 
         rho = np.dot(D, R)
-        if k == 0:
-            noise_sigma = (R - rho).flatten().std()
         rhomax = rho.max(axis=1)
         wcent = np.argmax(rhomax)
         wcent = (np.mod(wcent, ims[0]), int(wcent/ims[0]))
