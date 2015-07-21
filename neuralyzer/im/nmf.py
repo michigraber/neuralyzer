@@ -7,10 +7,21 @@ Non-Negative Matrix factorization implementations.
 
 import numpy as np
 
+try:
+    from joblib import Parallel, delayed
+    HAS_JOBLIB = True
+    N_JOBS = -1
+except:
+    print 'joblib could not be imported. NO PARALLEL JOB EXECUTION!'
+    HAS_JOBLIB = False 
+    N_JOBS = False
+
 from neuralyzer.log import get_logger
 
 
 TINY_POSITIVE_NUMBER = np.finfo(np.float).tiny 
+
+
 
 def nmf_cvxpy(A, k, max_iter=30):
     '''
@@ -177,12 +188,12 @@ class NMF_L0(object):
         for i in range(self.iterations):
             self._W = NMF_L0.update_W(V, self._H, self._W).clip(
                     TINY_POSITIVE_NUMBER, np.inf)
-            self._H = NMF_L0.update_H(self._W, V, spl0=self.spl0).clip(
+            self._H = NMF_L0.update_H(V, self._W, spl0=self.spl0).clip(
                     TINY_POSITIVE_NUMBER, np.inf)
 
 
     @staticmethod
-    def update_H(W, V, spl0=0.8):
+    def update_H(V, W, spl0=0.8, njobs=N_JOBS):
         '''
         !!! WARNING : requires tweaked scikit-learn LassoLars implementation
         that allows non-negativity, ie positivity, constraint on H.
@@ -192,11 +203,25 @@ class NMF_L0(object):
         # TODO: can be paralellized along V dim 1, not zero!
         hs = []
         alphas = []
-        for n in range(V.shape[1]):
-            ll = LARS(positive=True)
-            ll.fit(W, V[:,n])
-            alphas.append(ll.alphas_)
-            hs.append(ll.coef_path_)
+
+        if HAS_JOBLIB and N_JOBS:
+
+            pout = Parallel(n_jobs=njobs)(
+                    delayed(do_lars_fit)(W, V[:,pidx])
+                    for pidx in range(V.shape[1])
+                    )
+            for ll in pout:
+                alphas.append(ll[0])
+                hs.append(ll[1])
+
+        else:
+
+            for n in range(V.shape[1]):
+
+                ll = LARS(positive=True)
+                ll.fit(W, V[:,n])
+                alphas.append(ll.alphas_)
+                hs.append(ll.coef_path_)
             
         # SORT OUT H here according to sparseness criterion
         alphs = np.concatenate(alphas)
@@ -315,3 +340,8 @@ class LARS(object):
                     a[0] for a in (self.alphas_, self.active_, self.coef_)]
 
         return self
+
+def do_lars_fit(X, Y):
+    ll = LARS(positive=True)
+    ll.fit(X, Y)
+    return ll.alphas_, ll.coef_path_
