@@ -33,6 +33,7 @@ class Loader(LoaderTemplate):
 
 PILMode2NPdtype = {
         'I;16': 'uint16',
+        'I;16B': 'uint16',
         }
 
 def get_data_PIL(filepath):
