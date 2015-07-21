@@ -44,6 +44,10 @@ class SMFF(object):
         for ini in ('A', 'C', 'f', 'b'):
             self._init_params[ini] = kwargs.pop(ini, None)
 
+        self.params = {
+                'fs' : kwargs.get('fs', None),
+                }
+
 
     def _stop(self):
         '''
@@ -55,15 +59,25 @@ class SMFF(object):
 
 
     def init_model(self, *args, **kwargs):
-        from . import _init_model
-        C, A, b, f = _init_model._init_model(*args, **kwargs)
-        self._init_params['C'] = C
-        self._init_params['A'] = A
-        self._init_params['b'] = b
-        self._init_params['f'] = f
+        if kwargs.get('random', False):
+            k = kwargs.get('k', None)
+            d = kwargs.get('d', None)
+            T = kwargs.get('T', None)
+            self._init_params['C'] = np.random.rand(k, T)
+            self._init_params['A'] = np.random.rand(d, k)
+            self._init_params['b'] = np.random.rand(d, 1)
+            self._init_params['f'] = np.random.rand(1, T)
+
+        else:
+            from . import _init_model
+            C, A, b, f = _init_model._init_model(*args, **kwargs)
+            self._init_params['C'] = C
+            self._init_params['A'] = A
+            self._init_params['b'] = b
+            self._init_params['f'] = f
 
 
-    def fit_model(self, Y, max_num_iterations=10, re_init=True, morph=True,
+    def fit_model(self, Y, max_num_iterations=10, re_init=True, morph_mod=-1,
             temp_update_method='projgrad', **kwargs):
         ''''
 
@@ -73,16 +87,19 @@ class SMFF(object):
         in any case:
             - temporal_update_method : default='projgrad', 'multiplicative',
               'cvx_foopsie'
-            - morph : apply morphological smoothing of spatial components
-              (default=True)
+            - morph_mod : apply morphological smoothing of spatial components
+              every morph_mod step. < 0 leads to no smoothing (default=-1)
             - re_init : initialize model parameters from scratch with stored
               parameters (default=True)
             - spl0 : l0 sparseness measure for spatial components (will be
               removed)
         
-       temporal update projgrad (default):
-           - tolH (1e-4)
-           - maxiter (200)
+        temporal update projgrad (default):
+            - tolH (1e-4)
+            - maxiter (200)
+
+        cvx_foopsi:
+            - noise_range ((0.2, 0.5)) Hz
         '''
 
         self.logger.info('Fitting SMFF to data Y.')
@@ -99,6 +116,10 @@ class SMFF(object):
             self.max_num_iterations = max_num_iterations
             self._avg_abs_res = []
 
+        mean_residual = np.abs(self.residual(Y)).mean()
+        self.logger.info('avg absolute residual = %s ' % mean_residual)
+        self._avg_abs_res.append(mean_residual)
+
         while not self._stop():
             self.logger.info('iteration %s / %s ' % \
                     (self._step+1, self.max_num_iterations))
@@ -107,7 +128,8 @@ class SMFF(object):
             self.A, self.b = SMFF.update_A_b(self.C, self.A, self.b, self.f, Y,
                     spl0=_spl0, logger=self.logger)
             # ROI component post processing
-            if morph:
+            if not np.mod(self._step+1, morph_mod) and not morph_mod < 0:
+                self.logger.info('morphologically closing spatial components.') 
                 self.A = _morph_image_components(self.A)
             # UPDATE C, f -----------------------------------------------------
             self.C, self.f = SMFF.update_C_f(self.C, self.A, self.b, self.f, Y,
@@ -142,8 +164,6 @@ class SMFF(object):
         if method == 'projgrad':
             tolH = kwargs.get('tolH', 1e-4)
             maxiter = kwargs.get('maxiter', 200)
-            # TODO : do we need to clip here too?? (see multiplicative)
-            # .clip(TINY_POSITIVE_NUMBER, np.inf)
             # using the modified scikit-learn project gradient _nls_subproblem
             # update.
             H_, grad, n_iter = _nls_subproblem(Y, W, H, tolH, maxiter)
@@ -153,11 +173,11 @@ class SMFF(object):
             f = f[:, np.newaxis].T
 
         elif method == 'multiplicative':
-            # since this method is based on multiplication and divisions we
-            # need to ensure that we will not get infinity errors
+            # since this method is based on multiplication and division we need
+            # to ensure that we will not get infinity errors
             W = W.clip(TINY_POSITIVE_NUMBER, np.inf)
             H = H.clip(TINY_POSITIVE_NUMBER, np.inf)
-            # we call the multiplicative update from the Morup NMF implementation
+            # we call the multiplicative update from our Morup NMF implementation
             W_ = nmf.NMF_L0.update_W(Y.T, W.T, H.T)
             # rearrangement of output 
             C = W_[:, :-1].T
@@ -166,7 +186,14 @@ class SMFF(object):
 
         elif method == 'cvx_foopsi':
 
-            resYA = np.dot(Y.T, W) - (H.T, np.dot(W.T, W))
+            num_rois = A.shape[1]
+            resYA = np.dot(Y.T, W) - np.dot(H.T, np.dot(W.T, W))
+            nA = (W**2).sum()
+
+            noise = []
+            gammas = []
+            baseline = []
+            c0 = []
 
 
         return C, f 
