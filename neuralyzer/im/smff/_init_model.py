@@ -10,6 +10,9 @@ original reference by Pnevmatikakis et al. 2014.
 '''
 
 import numpy as np 
+from scipy import ndimage
+
+from joblib import Parallel, delayed
 
 from .. import nmf 
 
@@ -18,86 +21,100 @@ logger = log.get_logger()
 
 TINY_POSITIVE_NUMBER = np.finfo(np.float).tiny 
 
+N_JOBS = -1
 
-def _init_model(Y, gaussian_blur_memmap, num_components=1, ws=41,
-        spl0_comps=0.8, spl0_bg=0.4, iterations=10):
+
+def _init_model(Y, components=((5, 2, 30), ), spl0_comps=0.8, spl0_bg=0.4,
+        iterations=10):
     '''
     Rather heuristic initialization procedure.
     
     Y: the data of form [Y] = d x T
     gaussian_blur_memmap : a numpy memory map to a gaussian blur matrix
 
-    num_components : the number of components (neurons) we aim for
+    components : the number of components (neurons, compartments) we aim for
+    with their respective sigma and window size multiplier as tuples
+    (n, sigma, wsmult)
 
     WARNING !! we assume quadratic image shape
 
     '''
-    logger.info('Initializing SMFF model: %s components' % num_components)
+    logger.info('Initializing SMFF model')
 
     d, T = Y.shape
-
-    #mediandata = np.median(Y, axis=1)
-    #R = Y - np.tile(mediandata, (Y.shape[1], 1)).T
     R = Y.copy()
-    f, b = _nmf_l0(R.T, spl0=spl0_bg)
 
     # subtract background ..
-    #b_norm = b/b.sum()
-    #R = R - np.dot(np.dot(R.T, b_norm.T), b_norm).clip(TINY_POSITIVE_NUMBER, np.inf).T
+    f, b = _nmf_l0(R.T, spl0=spl0_bg, iterations=iterations)
     R  = (R - np.dot(f, b).T).clip(TINY_POSITIVE_NUMBER, np.inf)
 
-    D = gaussian_blur_memmap
-
     ims = int(np.sqrt(d))
-    # in case we would like to make it an input argument at some point ..
-    ims = (ims, ims)
 
     A, C = [], []
 
-    for k in range(num_components):
+    for num_comps, sg, wsmult in components:
 
-        logger.info('component %s / %s ' % (k+1, num_components))
+        # calculate the window size
+        ws = int(sg*wsmult)
+        ws = ws+1 if not np.mod(ws, 2) else ws # make it odd
 
-        rho = np.dot(D, R)
-        rhomax = rho.max(axis=1)
-        wcent = np.argmax(rhomax)
-        wcent = (np.mod(wcent, ims[0]), int(wcent/ims[0]))
-        wmask = window_mask(wcent, ims, ws).flatten()
-        Rw = R[wmask, :]
+        logger.info('Finding %s components with sigma %s and window size %s' % (num_comps, sg, ws))
+        
+        for k in range(num_comps):
 
-        H_init = rhomax[wmask].flatten()
-        H_init /= H_init.sum() # normalize
-        H_init.shape += (1,)
-        W_init = np.dot(Rw.T, H_init)
+            rho = blur_images(R.T.reshape(T,ims,ims),sg).reshape(T,ims**2).T
+            rhomax = rho.max(axis=1)
+            wcent = np.argmax(rhomax)
+            wcent = (np.mod(wcent, ims), int(wcent/ims))
+            wmask = window_mask(wcent, (ims, ims), ws).flatten()
+            Rw = R[wmask, :]
 
-        W, H = _nmf_l0(Rw.T, W_init, spl0=spl0_comps, iterations=iterations)
+            H_init = rhomax[wmask].flatten()
+            H_init /= H_init.sum() # normalize
+            H_init.shape += (1,)
+            W_init = np.dot(Rw.T, H_init)
 
-        ak = np.zeros(R.shape[0])
-        ak.flat[wmask] = H
-        ak = (ak/ak.sum()).clip(TINY_POSITIVE_NUMBER, np.inf) # normalize
-        A.append(ak) # normalize
+            W, H = _nmf_l0(Rw.T, W_init, spl0=spl0_comps, iterations=iterations)
 
-        c = np.dot(R.T, ak)
-        #W = W.clip(TINY_POSITIVE_NUMBER, np.inf)
-        C.append(c/c.sum())
+            ak = np.zeros(R.shape[0])
+            ak.flat[wmask] = H
+            #ak.flat[wmask] = H/(H[H>0]).std()
+            ak = (ak/ak.sum()).clip(TINY_POSITIVE_NUMBER, np.inf) # normalize
+            #ak = (ak).clip(TINY_POSITIVE_NUMBER, np.inf) # normalize
+            A.append(ak)
 
-        R[wmask, :] = (R[wmask, :] - np.dot(W, H).T).clip(TINY_POSITIVE_NUMBER, np.inf)
+            c = np.dot(R.T, ak)
+            #W = W.clip(TINY_POSITIVE_NUMBER, np.inf)
+            C.append(c/c.sum())
+
+            R[wmask, :] = (R[wmask, :] - np.dot(W, H).T).clip(TINY_POSITIVE_NUMBER, np.inf)
+
 
     # initialize background trace + signal
     # get better init estimate for background!!
     #f, b = _nmf_lars_greedy_init(R.T, 'random', k=1, iterations=30, normalize=False, alpha=1.)
     #f, b = _nmf_l0(R.T, alpha=0.01)
 
-    R  = (R + np.dot(f, b).T).clip(TINY_POSITIVE_NUMBER, np.inf)
+    #R  = (R + np.dot(f, b).T).clip(TINY_POSITIVE_NUMBER, np.inf)
 
+    logger.info('Finally calculating background ..')
     f, b = _nmf_l0(R.T, spl0=spl0_bg, iterations=iterations)
 
-    #f = f/f.sum()
-
-    C = np.array(C).reshape(num_components, T) # will be of shape k x T
+    C = np.array(C)  # will be of shape k x T
     A = np.array(A).T # will be of shape d x k
 
+    logger.info('A, C, b and f intitialized.')
+
     return A, C, b.T, f.T
+
+
+def blur_images(imagestack, sg, parallel=True):
+    bis = Parallel(n_jobs=N_JOBS)(
+            delayed(ndimage.gaussian_filter)(imagestack[ii,:,:], sg)
+            for ii in range(imagestack.shape[0])
+            )
+    return np.array(bis)
+
 
 
 def _nmf_l0(V, W_init=None, spl0=0.6, iterations=10, k=1):
