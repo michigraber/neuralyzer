@@ -12,7 +12,12 @@ original reference by Pnevmatikakis et al. 2014.
 import numpy as np 
 from scipy import ndimage
 
-from joblib import Parallel, delayed
+try:
+    from joblib import Parallel, delayed
+    N_JOBS = -1
+except:
+    print 'joblib could not be imported. NO PARALLEL JOB EXECUTION!'
+    N_JOBS = None 
 
 from .. import nmf 
 
@@ -21,34 +26,36 @@ logger = log.get_logger()
 
 TINY_POSITIVE_NUMBER = np.finfo(np.float).tiny 
 
-N_JOBS = -1
 
-
-def _init_model(Y, components=((5, 2, 30), ), spl0_comps=0.8, spl0_bg=0.4,
-        iterations=10):
+def greedy(Y, components=((5, 2, 30), ), spl0_comps=0.1, iterations=5, njobs=N_JOBS):
     '''
     Rather heuristic initialization procedure.
     
     Y: the data of form [Y] = d x T
-    gaussian_blur_memmap : a numpy memory map to a gaussian blur matrix
 
-    components : the number of components (neurons, compartments) we aim for
-    with their respective sigma and window size multiplier as tuples
-    (n, sigma, wsmult)
+    components : the number of components (neurons, compartments, windowsize
+    multiplier) we aim for with their respective sigma and window size
+    multiplier as tuples (n, sigma, wsmult)
 
     WARNING !! we assume quadratic image shape
 
     '''
-    logger.info('Initializing SMFF model')
+    logger.info('Initializing SMFF model with greedy algorithm.')
 
     d, T = Y.shape
+    ims = int(np.sqrt(d))
+
+    logger.debug('copying data ..')
     R = Y.copy()
 
-    # subtract background ..
-    f, b = _nmf_l0(R.T, spl0=spl0_bg, iterations=iterations)
-    R  = (R - np.dot(f, b).T).clip(TINY_POSITIVE_NUMBER, np.inf)
-
-    ims = int(np.sqrt(d))
+    # subtract 'background' ..
+    logger.info('subtracting background')
+    b = np.mean(R, axis=1)
+    b /= np.linalg.norm(b)
+    b = b[:, np.newaxis]
+    f = np.dot(R.T, b).T
+    #R  = (R - np.dot(b, f)).clip(TINY_POSITIVE_NUMBER, np.inf)
+    R  = (R - np.dot(b, f))
 
     A, C = [], []
 
@@ -61,8 +68,10 @@ def _init_model(Y, components=((5, 2, 30), ), spl0_comps=0.8, spl0_bg=0.4,
         logger.info('Finding %s components with sigma %s and window size %s' % (num_comps, sg, ws))
         
         for k in range(num_comps):
+            logger.debug('component %s / %s' % (k+1, num_comps))
 
-            rho = blur_images(R.T.reshape(T,ims,ims),sg).reshape(T,ims**2).T
+            rho = blur_images(R.T.reshape(T,ims,ims),sg, njobs=njobs
+                    ).reshape(T,ims**2).T
             rhomax = rho.max(axis=1)
             wcent = np.argmax(rhomax)
             wcent = (np.mod(wcent, ims), int(wcent/ims))
@@ -70,51 +79,58 @@ def _init_model(Y, components=((5, 2, 30), ), spl0_comps=0.8, spl0_bg=0.4,
             Rw = R[wmask, :]
 
             H_init = rhomax[wmask].flatten()
-            H_init /= H_init.sum() # normalize
+            H_init /= np.linalg.norm(H_init) # normalize
             H_init.shape += (1,)
             W_init = np.dot(Rw.T, H_init)
 
             W, H = _nmf_l0(Rw.T, W_init, spl0=spl0_comps, iterations=iterations)
 
-            ak = np.zeros(R.shape[0])
+            # creating the full size component
+            ak = TINY_POSITIVE_NUMBER*np.ones(d)
             ak.flat[wmask] = H
-            #ak.flat[wmask] = H/(H[H>0]).std()
-            ak = (ak/ak.sum()).clip(TINY_POSITIVE_NUMBER, np.inf) # normalize
-            #ak = (ak).clip(TINY_POSITIVE_NUMBER, np.inf) # normalize
+            ak[ak < 2*TINY_POSITIVE_NUMBER] = 0. # thresholding at 2 epsilon
+            ak /= np.linalg.norm(ak) # normalize
             A.append(ak)
 
             c = np.dot(R.T, ak)
             #W = W.clip(TINY_POSITIVE_NUMBER, np.inf)
-            C.append(c/c.sum())
+            #C.append(c/c.sum())
+            C.append(c)
 
-            R[wmask, :] = (R[wmask, :] - np.dot(W, H).T).clip(TINY_POSITIVE_NUMBER, np.inf)
+            #R[wmask, :] = (R[wmask, :] - np.dot(W, H).T).clip(TINY_POSITIVE_NUMBER, np.inf)
+            R[wmask, :] = (R[wmask, :] - np.dot(W, H).T)
 
-
-    # initialize background trace + signal
-    # get better init estimate for background!!
-    #f, b = _nmf_lars_greedy_init(R.T, 'random', k=1, iterations=30, normalize=False, alpha=1.)
-    #f, b = _nmf_l0(R.T, alpha=0.01)
-
-    #R  = (R + np.dot(f, b).T).clip(TINY_POSITIVE_NUMBER, np.inf)
-
-    logger.info('Finally calculating background ..')
-    f, b = _nmf_l0(R.T, spl0=spl0_bg, iterations=iterations)
 
     C = np.array(C)  # will be of shape k x T
     A = np.array(A).T # will be of shape d x k
 
-    logger.info('A, C, b and f intitialized.')
+    logger.info('Finally calculating background ..')
+    Yres =  Y - np.dot(A, C)
+    b = Yres.mean(axis=1)
+    b /= np.linalg.norm(b)
+    b = b[:, np.newaxis]
+    f = np.dot(Yres.T, b).T
 
-    return A, C, b.T, f.T
+    logger.info('A, C, b and f initialization completed.')
+
+    return A, C, b, f
 
 
-def blur_images(imagestack, sg, parallel=True):
-    bis = Parallel(n_jobs=N_JOBS)(
-            delayed(ndimage.gaussian_filter)(imagestack[ii,:,:], sg)
-            for ii in range(imagestack.shape[0])
-            )
+def blur_images(imagestack, sg, njobs=N_JOBS):
+    ''' 2D Gaussian filter on all images of imagestack. '''
+
+    if njobs is None:
+        bis = []
+        for ii in range(imagestack.shape[0]):
+            bis.append(ndimage.gaussian_filter(imagestack[ii,:,:], sg))
+
+    elif type(njobs) == int:
+        bis = Parallel(n_jobs=njobs)(
+                delayed(ndimage.gaussian_filter)(imagestack[ii,:,:], sg)
+                for ii in range(imagestack.shape[0])
+                )
+
     return np.array(bis)
-
 
 
 def _nmf_l0(V, W_init=None, spl0=0.6, iterations=10, k=1):
@@ -138,6 +154,9 @@ def window_mask(cent, ims, ws):
     w[xl[0]:xl[1], yl[0]:yl[1]] = True
     return w
 
+
+"""
+REMOVE (July 30, 2015)
 
 def _nmf_lars_greedy_init(V, H_init, k=None, iterations=30, **kwargs):
     '''
@@ -167,3 +186,4 @@ def _nmf_lars_greedy_init(V, H_init, k=None, iterations=30, **kwargs):
         H = lA.coef_
 
     return W, H
+"""
