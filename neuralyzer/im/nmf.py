@@ -9,14 +9,14 @@ import numpy as np
 
 try:
     from joblib import Parallel, delayed
-    HAS_JOBLIB = True
     N_JOBS = -1
 except:
     print 'joblib could not be imported. NO PARALLEL JOB EXECUTION!'
-    HAS_JOBLIB = False 
-    N_JOBS = False
+    N_JOBS = None 
 
 from neuralyzer.log import get_logger
+
+
 
 
 TINY_POSITIVE_NUMBER = np.finfo(np.float).tiny 
@@ -104,11 +104,11 @@ def nmf_lars(V, k, H_init=None, max_iter=30, morph=True,
         if log:
             logger.info('iteration : %s / %s' % (iter_num+1, max_iter))
 
-        lB = LassoLars(positive=True, max_iter=200, alpha=0.5, normalize=True, **kwargs)
+        lB = LassoLars(nonnegative=True, max_iter=200, alpha=0.5, normalize=True, **kwargs)
         lB.fit(H, V.T)
         W = lB.coef_
 
-        lA = LassoLars(positive=True, max_iter=200, alpha=0.05, normalize=True, **kwargs)
+        lA = LassoLars(nonnegative=True, max_iter=200, alpha=0.05, normalize=True, **kwargs)
         lA.fit(W, V)
         H = lA.coef_
 
@@ -161,20 +161,28 @@ class NMF_L0(object):
     References:
     [1] M. Morup, K. H. Madsen, L. K. Hansen, Approximate L0 constrained
     Non-negative Matrix and Tensor Factorization, IEEE 2008
+
+
+    !!! WARNING !!!
+    requires tweaked scikit-learn LassoLars implementation that allows
+    non-negativity constraint on H.
+
+
     '''
 
-    def __init__(self, spl0=0.3, iterations=100):
+    def __init__(self, spl0=0.3, iterations=100, logger=get_logger()):
         self._spl0 = spl0
         # TODO: iterations will have to be replaced by a stop criterion,
         # based on a the residual and max_iterations!
         self.iterations = iterations 
+        self.logger=logger
 
     @property
     def spl0(self):
         return self._spl0
 
 
-    def fit(self, V, H_init=None, W_init=None, k=None):
+    def fit(self, V, H_init=None, W_init=None, k=None, njobs=N_JOBS):
         self.v_shape = V.shape
         if W_init is None:
             self._W = np.random.rand(self.v_shape[0], k)
@@ -186,10 +194,15 @@ class NMF_L0(object):
             self._H = H_init
 
         for i in range(self.iterations):
-            self._W = NMF_L0.update_W(V, self._H, self._W).clip(
-                    TINY_POSITIVE_NUMBER, np.inf)
-            self._H = NMF_L0.update_H(V, self._W, spl0=self.spl0).clip(
-                    TINY_POSITIVE_NUMBER, np.inf)
+            try:
+                self._W = NMF_L0.update_W(V, self._H, self._W
+                        ).clip( TINY_POSITIVE_NUMBER, np.inf)
+                self._H = NMF_L0.update_H(V, self._W, spl0=self.spl0, njobs=njobs,
+                        ).clip( TINY_POSITIVE_NUMBER, np.inf)
+            except Exception, e:
+                self.logger.warning('CANNOT UPDATE at iteration %s' % i)                
+                self.logger.error(e, exc_info=True)
+                break 
 
 
     @staticmethod
@@ -198,31 +211,28 @@ class NMF_L0(object):
         !!! WARNING : requires tweaked scikit-learn LassoLars implementation
         that allows non-negativity, ie positivity, constraint on H.
         '''
-        #ll = LassoLars(positive=True, alpha=alpha)
 
-        # TODO: can be paralellized along V dim 1, not zero!
         hs = []
         alphas = []
 
-        if HAS_JOBLIB and N_JOBS:
+        if njobs is None:
+            for n in range(V.shape[1]):
 
+                ll = LARS(nonnegative=True)
+                ll.fit(W, V[:,n])
+                alphas.append(ll.alphas_)
+                hs.append(ll.coef_path_)
+
+        else:
             pout = Parallel(n_jobs=njobs)(
-                    delayed(do_lars_fit)(W, V[:,pidx])
+                    delayed(do_lars_fit)(W, V[:,pidx], return_path=True)
                     for pidx in range(V.shape[1])
                     )
             for ll in pout:
                 alphas.append(ll[0])
                 hs.append(ll[1])
 
-        else:
 
-            for n in range(V.shape[1]):
-
-                ll = LARS(positive=True)
-                ll.fit(W, V[:,n])
-                alphas.append(ll.alphas_)
-                hs.append(ll.coef_path_)
-            
         # SORT OUT H here according to sparseness criterion
         alphs = np.concatenate(alphas)
         # approximate l0 cut off
@@ -279,12 +289,11 @@ from sklearn.linear_model.least_angle import lars_path
 
 class LARS(object):
 
-    def __init__(self, n_nonzero_coefs=500, positive=True,
-            eps=np.finfo(np.float).eps, copy_X=True, max_iter=500,
-            ):
+    def __init__(self, nonnegative=True, eps=np.finfo(np.float).eps,
+            copy_X=True, max_iter=500,):
 
         self.method = 'lasso'
-        self.positive = positive 
+        self.nonnegative = nonnegative 
         self.eps = eps
         self.copy_X = copy_X
         self.max_iter = max_iter
@@ -295,7 +304,6 @@ class LARS(object):
         self._alpha_min = alpha_min
 
         ### maybe do some checks on the inputs here
-        
 
         ### set up
         if self.copy_X:
@@ -319,7 +327,7 @@ class LARS(object):
                 X, y[:, k], Gram=None, Xy=this_Xy, copy_X=self.copy_X,
                 copy_Gram=True, alpha_min=self._alpha_min, method=self.method,
                 max_iter=self.max_iter, eps=self.eps, return_path=return_path,
-                return_n_iter=True, positive=self.positive)
+                return_n_iter=True, nonnegative=self.nonnegative)
             self.alphas_.append(alphas)
             self.active_.append(active)
             self.n_iter_.append(n_iter_)
@@ -341,7 +349,11 @@ class LARS(object):
 
         return self
 
-def do_lars_fit(X, Y):
-    ll = LARS(positive=True)
-    ll.fit(X, Y)
-    return ll.alphas_, ll.coef_path_
+
+def do_lars_fit(X, y, alpha=0., return_path=False):
+    ll = LARS(nonnegative=True)
+    ll.fit(X, y, alpha_min=alpha, return_path=return_path)
+    if return_path:
+        return ll.alphas_, ll.coef_path_
+    else:
+        return ll.coef_
