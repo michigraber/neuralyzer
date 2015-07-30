@@ -15,16 +15,26 @@ from sklearn import linear_model
 from sklearn.decomposition.nmf import _nls_subproblem
 
 from neuralyzer.im import nmf
-from neuralyzer import log
 
+from neuralyzer.im.smff import noise
+
+from neuralyzer import log
 logger = log.get_logger()
+
+
+try:
+    from joblib import Parallel, delayed
+    N_JOBS = -1
+except:
+    print 'joblib could not be imported. NO PARALLEL JOB EXECUTION!'
+    N_JOBS = None 
 
 
 TINY_POSITIVE_NUMBER = np.finfo(np.float).tiny 
 
 
 
-# SPARSE NON-NEGATIVE MATRIX FACTORIZATION CODE
+# STRUCTURED NON-NEGATIVE MATRIX FACTORIZATION CODE
 # -----------------------------------------------------------------------------
 
 class SMFF(object):
@@ -45,7 +55,8 @@ class SMFF(object):
             self._init_params[ini] = kwargs.pop(ini, None)
 
         self.params = {
-                'fs' : kwargs.get('fs', None),
+                'fs' : kwargs.get('fs', 15.),
+                'noise_range' : kwargs.get('noise_range', (0.25, 0.5)), # in fs units
                 }
 
 
@@ -70,7 +81,7 @@ class SMFF(object):
 
         else:
             from . import _init_model
-            C, A, b, f = _init_model._init_model(*args, **kwargs)
+            A, C, b, f = _init_model.greedy(*args, **kwargs)
             self._init_params['C'] = C
             self._init_params['A'] = A
             self._init_params['b'] = b
@@ -78,7 +89,7 @@ class SMFF(object):
 
 
     def fit_model(self, Y, max_num_iterations=10, re_init=True, morph_mod=-1,
-            temp_update_method='projgrad', **kwargs):
+            temp_update_method='projgrad', njobs=N_JOBS, **kwargs):
         ''''
 
         DEPENDING ON THE METHODS CHOSEN YOU CAN PROVIDE DIFFERENT KEYWORD
@@ -86,32 +97,29 @@ class SMFF(object):
 
         in any case:
             - temporal_update_method : default='projgrad', 'multiplicative',
-              'cvx_foopsie'
+              'constrained_foopsi'
             - morph_mod : apply morphological smoothing of spatial components
               every morph_mod step. < 0 leads to no smoothing (default=-1)
             - re_init : initialize model parameters from scratch with stored
               parameters (default=True)
-            - spl0 : l0 sparseness measure for spatial components (will be
-              removed)
         
         temporal update projgrad (default):
             - tolH (1e-4)
             - maxiter (200)
 
-        cvx_foopsi:
-            - noise_range ((0.2, 0.5)) Hz
+        constrained_foopsi:
+            - noise_range ((0.25, 0.5), in fs units)
         '''
 
         self.logger.info('Fitting SMFF to data Y.')
-        self.logger.debug('[Y] = '+str(Y.shape))
-
-        _spl0 = kwargs.pop('spl0', 0.97)
+        self.logger.debug('njobs = %s' % njobs)
 
         if re_init:
-            self.C = self._init_params['C'].copy()
-            self.A = self._init_params['A'].copy()
-            self.b = self._init_params['b'].copy()
-            self.f = self._init_params['f'].copy()
+            self.logger.debug('Copying initial model values ..')
+            self.C_ = self._init_params['C'].copy()
+            self.A_ = self._init_params['A'].copy()
+            self.b_ = self._init_params['b'].copy()
+            self.f_ = self._init_params['f'].copy()
             self._step = 0
             self.max_num_iterations = max_num_iterations
             self._avg_abs_res = []
@@ -120,22 +128,33 @@ class SMFF(object):
         self.logger.info('avg absolute residual = %s ' % mean_residual)
         self._avg_abs_res.append(mean_residual)
 
+        if temp_update_method in ('projgrad', 'constrained_foopsi',):
+            self.logger.debug('calculating noise level for all pixels.')
+            self._pixel_noise = noise.sigma_noise_spd_welch(Y, 1., self.params['noise_range'])
+
         while not self._stop():
             self.logger.info('iteration %s / %s ' % \
                     (self._step+1, self.max_num_iterations))
 
             # UPDATE A, b -----------------------------------------------------
-            self.A, self.b = SMFF.update_A_b(self.C, self.A, self.b, self.f, Y,
-                    spl0=_spl0, logger=self.logger)
+            self.A_, self.b_ = SMFF.update_A_b(self.C_, self.A_, self.b_, self.f_, Y,
+                    self._pixel_noise, logger=self.logger, njobs=njobs)
             # ROI component post processing
             if not np.mod(self._step+1, morph_mod) and not morph_mod < 0:
                 self.logger.info('morphologically closing spatial components.') 
-                self.A = _morph_image_components(self.A)
+                self.A_ = _morph_image_components(self.A_)
+
+            # TODO : threshold spatial components
+            if kwargs.get('threshold', False):
+                pass
+
             # UPDATE C, f -----------------------------------------------------
-            self.C, self.f = SMFF.update_C_f(self.C, self.A, self.b, self.f, Y,
+            self.C_, self.f_ = SMFF.update_C_f(self.C_, self.A_, self.b_, self.f_, Y,
                     method=temp_update_method, logger=self.logger, **kwargs)
+
             # ROI Merging -----------------------------------------------------
             # TODO
+
             # RESIDUAL CALCULATION --------------------------------------------
             mean_residual = np.abs(self.residual(Y)).mean()
             self.logger.info('avg absolute residual = %s ' % mean_residual)
@@ -149,9 +168,6 @@ class SMFF(object):
     def update_C_f(C, A, b, f, Y, **kwargs):
         '''
         '''
-
-        # TODO : FIX VARIABLE NAMES / NOMENCLATURE FOR BETTER TRANSPARENCY
-
         method = kwargs.pop('method', 'projgrad')
 
         logger = kwargs.pop('logger', None)
@@ -184,92 +200,60 @@ class SMFF(object):
             f = W_[:, -1].T 
             f = f[:, np.newaxis].T
 
-        elif method == 'cvx_foopsi':
+        elif method == 'constrained_foopsi':
+
+            # along the cvx_foopsi part of the Pnevmatikakis code on github:
+            # https://github.com/epnev/constrained-foopsi/blob/master/constrained_foopsi.m
 
             num_rois = A.shape[1]
             resYA = np.dot(Y.T, W) - np.dot(H.T, np.dot(W.T, W))
             nA = (W**2).sum()
 
-            noise = []
             gammas = []
             baseline = []
             c0 = []
-
 
         return C, f 
 
 
     @staticmethod
-    def update_A_b(C, A, b, f, Y, **kwargs):
+    def update_A_b(C, A, b, f, Y, noise, **kwargs):
         '''
         minimize || A ||_1
         subject to : A, b >= 0, ||Y(i,:) - A(i,:)C - b(i)f.T || < \sigma_i * sqrt(T)
         '''
-        
-        spl0 = kwargs.get('spl0', 0.95)
-
         logger = kwargs.pop('logger', None)
-        if logger: logger.debug('Updating A and b with spl0=%s' % spl0)
+        if logger: logger.debug('Updating A and b')
 
-        A_, b_ = [], []
+        njobs = kwargs.pop('njobs', N_JOBS)
 
-        # calculate background data
-        if f.ndim == 1:
-            f = f[:, np.newaxis].T
-        bg = np.dot(b, f)
+        d, T = Y.shape
+        H = np.vstack((C, f))
+        
+        if njobs is None:
+            A_ = []
+            for pidx, sn in enumerate(noise):
+                A_.append(nmf.do_lars_fit(H.T, Y[pidx], alpha=sn*np.sqrt(T)))
 
-        # we need to keep all alphas and all hs so that we can cut based on the
-        # alpha distribution post hoc -> need a better mechanism here! TODO
-        alphas = []
-        hs = []
+        elif type(njobs) == int:
+                A_ = Parallel(n_jobs=njobs)(
+                        delayed(nmf.do_lars_fit)(H.T, Y[pidx], alpha=noise[pidx]*np.sqrt(T))
+                        for pidx in range(len(noise)))
+        else:
+            raise ValueError('njobs of improper type. Can only be an int or None.')
 
-        # LOOP OVER ALL PIXELS (multiple times)
-        # TODO : !! parallelize !!
-
-        # 1. model selection loop : shrinkage on A only -----------------------
-        for pidx in range(A.shape[0]):
-            # i) subtract b from Y
-            R = np.array([(Y[pidx] - bg[pidx]),]).clip(TINY_POSITIVE_NUMBER, np.inf).T
-            # ii) use strong shrinkage to select components
-            ll = nmf.LARS(positive=True)
-            ll.fit(C.T, R)
-            alphas.append(ll.alphas_)
-            hs.append(ll.coef_path_)
-
-        # 2. calculate the cutoff ---------------------------------------------
-        alphs = np.concatenate(alphas)
-        numcomps = (1.-spl0)*Y.shape[0]*Y.shape[1]
-        cutoff = -np.percentile(-alphs, (1.-spl0)*100) 
-
-        # 3. calculate A and b ------------------------------------------------
-        H = []
-        for n in range(len(hs)):
-            relevant_h = hs[n][:, np.where((alphas[n] - cutoff) <= 0)[0][0]]
-            comps = np.where(relevant_h)[0]
-            Cf = np.vstack([C[comps,:], f])
-            y = Y[n]
-            y = y[:, np.newaxis]
-
-            # coefficient estimation : selected ROIs including b
-            ll = nmf.LARS(positive=True)
-            ll.fit(Cf.T, Y[n], return_path=False, alpha_min=0.)
-
-            # append the coeffs
-            a = np.zeros(A.shape[1])
-            a[comps] = ll.coef_[:-1]
-            A_.append(a)
-            b_.append(ll.coef_[-1])
-
-        A = np.array(A_)
-        b = np.array(b_)
-        b = b[:, np.newaxis] # return a 2 dimensional array
+        A_ = np.array(A_)
+        A = A_[:,:-1]
+        A /= np.linalg.norm(A, axis=0)[np.newaxis, :]
+        b = np.dot((Y - np.dot(A, C)), f.T/norm(f))
+        b /= np.linalg.norm(b)
 
         return A, b
 
 
     def Y_hat(self):
         ''' The estimated data using the current parameters on the model. '''
-        return np.dot(self.A, self.C) + np.dot(self.b, self.f)
+        return np.dot(self.A_, self.C_) + np.dot(self.b_, self.f_)
 
 
     def residual(self, Y):
@@ -278,8 +262,12 @@ class SMFF(object):
 
 
 
+# UTILITIES
 # -----------------------------------------------------------------------------
 
+def norm(x):
+    ''' euclidian norm for 1d vector '''
+    return np.sqrt(np.dot(x.squeeze(),x.squeeze()))
 
 def _morph_image_components(H):
     from skimage import morphology
@@ -290,21 +278,7 @@ def _morph_image_components(H):
         H[:, i] = morph_close_component(H[:,i], imshape) 
     return H
 
-
 def morph_close_component(a, imshape):
     from skimage import morphology
     amorph = morphology.closing(a.reshape(imshape[0], imshape[1]))
     return amorph.flatten()
-
-
-def _lars(W, v, alpha):
-    ll = linear_model.LassoLars(fit_intercept=False, positive=True, alpha=alpha)
-    ll.fit(W, v)
-    H = np.array(ll.coef_)
-    return H, ll.intercept_
-
-def _linear_regression(W, v):
-    lr = linear_model.LinearRegression(fit_intercept=False)
-    lr.fit(W, v)
-    H = np.array(lr.coef_)
-    return H
