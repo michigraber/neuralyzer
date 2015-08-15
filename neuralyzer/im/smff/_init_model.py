@@ -83,7 +83,8 @@ def greedy(Y, components=((5, 2, 30), ), spl0_comps=0.1, iterations=5, njobs=N_J
             H_init.shape += (1,)
             W_init = np.dot(Rw.T, H_init)
 
-            W, H = _nmf_l0(Rw.T, W_init, spl0=spl0_comps, iterations=iterations)
+            W, H = _nmf_l0(Rw.T, W_init=W_init, H_init=H_init.T,
+                    spl0=spl0_comps, iterations=iterations)
 
             # creating the full size component
             ak = TINY_POSITIVE_NUMBER*np.ones(d)
@@ -133,11 +134,11 @@ def blur_images(imagestack, sg, njobs=N_JOBS):
     return np.array(bis)
 
 
-def _nmf_l0(V, W_init=None, spl0=0.6, iterations=10, k=1):
+def _nmf_l0(V, W_init=None, H_init=None, spl0=0.6, iterations=10, k=1):
     '''
     '''
     nmfl0 = nmf.NMF_L0(spl0=spl0, iterations=iterations)
-    nmfl0.fit(V, W_init=W_init, k=k)
+    nmfl0.fit(V, W_init=W_init, H_init=H_init, k=k)
     return nmfl0._W, nmfl0._H
 
 
@@ -153,37 +154,3 @@ def window_mask(cent, ims, ws):
     yl = np.array([cent[0]-ws, cent[0]+ws+1]).clip(0, ims[0])
     w[xl[0]:xl[1], yl[0]:yl[1]] = True
     return w
-
-
-"""
-REMOVE (July 30, 2015)
-
-def _nmf_lars_greedy_init(V, H_init, k=None, iterations=30, **kwargs):
-    '''
-    V = WH : V, W, H >= 0
-
-    V.shape = (m, n)
-    W.shape = (m, k)
-    H.shape = (k, n)
-    '''
-    from sklearn.linear_model import LassoLars 
-    m, n = V.shape
-    if H_init == 'random':
-        H = np.random.rand(n, k)
-    else:
-        H = H_init
-        if H.ndim == 1:
-            H.shape  += (1,) 
-
-    # Perform 'alternating' minimization.
-    for iter_num in range(iterations):
-        lB = LassoLars(positive=True, max_iter=200, **kwargs)
-        lB.fit(H, V.T)
-        W = lB.coef_
-
-        lA = LassoLars(positive=True, max_iter=200, **kwargs)
-        lA.fit(W, V)
-        H = lA.coef_
-
-    return W, H
-"""
