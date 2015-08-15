@@ -1,7 +1,10 @@
 
 
 import numpy as np
+
 import seaborn as sns
+sns.set(style='whitegrid')
+
 from matplotlib import pyplot as plt
 
 
@@ -40,7 +43,6 @@ def plot_temporal_components(C, fs):
     tr = tr/np.array([tr.std(axis=1)]*T).T
     
     time = np.linspace(0, T/fs-1/fs, T)
-    sns.set_style('whitegrid')
     fig, ax = plt.subplots(nrows=1, ncols=1, figsize=(16, k+2))
     yticks = []
     for idx in range(k):
@@ -58,7 +60,7 @@ def plot_temporal_components(C, fs):
     return fig, ax
 
 
-def plot_correlation_matrix(C, biased=True):
+def plot_correlation_matrix(C, biased=True, figsize=(8,8)):
     '''
     [C] = k x T
     '''
@@ -70,7 +72,7 @@ def plot_correlation_matrix(C, biased=True):
     else:
         corrmat = np.dot(tr, tr.T)/(T-1)
 
-    fig, ax = plt.subplots(figsize=(7, 7))
+    fig, ax = plt.subplots(figsize=figsize)
     _ = sns.heatmap(corrmat, square=True, ax=ax)
     tit = ax.set_title('correlation matrix')
     tit.set_fontsize(14)
@@ -108,10 +110,49 @@ def plot_spectral_components(C, f, fs=15.):
 def browse_stack(imagestack):
     from IPython.html.widgets import interact
     n, y, x = imagestack.shape
-    plt.grid(False)
     def view_image(i):
         plt.grid(False)
         plt.imshow(imagestack[i], cmap='gray', interpolation=None)
         plt.title('Frame: %s' % i)
         plt.show()
     interact(view_image, i=(0,n-1))
+
+
+def browse_components(A, C, fs, Y=None, S=None, center=True, cmap='cubehelix'):
+    from IPython.html.widgets import interact
+    from matplotlib import gridspec
+    d, k = A.shape
+    k, T = C.shape
+    ims = np.sqrt(d)
+    if center:
+        tr = C - np.array([C.mean(axis=1)]*T).T
+        tr = tr/np.array([tr.max(axis=1)]*T).T
+    else:
+        tr = C
+    if Y is not None:
+        P = np.dot(Y.T, A)
+        P -= np.array([P.mean(axis=0)]*T)
+        P /= np.array([P.max(axis=0)]*T)
+        #P *= np.array([tr.max(axis=1)]*T)
+    if S is not None:
+        S /= np.array([S.max(axis=1)]*T).T
+        #S *= np.array([tr.max(axis=1)]*T).T
+    time = np.linspace(0, T/fs-1/fs, T)
+    def view_image(i):
+        #fig, ax = plt.subplots(nrows=2, ncols=1, figsize=(15, 12))
+        # image
+        fig = plt.figure(figsize=(14, 14))
+        gs = gridspec.GridSpec(2, 1, height_ratios=[3, 1])
+        ax0 = plt.subplot(gs[0])
+        ax0.grid(False)
+        ax0.imshow(A[:,i].reshape(ims, ims), cmap=cmap, interpolation=None)
+        ax0.set_title('Frame: %s' % i)
+        # trace
+        ax1 = plt.subplot(gs[1])
+        ax1.plot(time, tr[i])
+        if Y is not None: ax1.plot(time, P[:,i]-1.)
+        if S is not None: ax1.plot(time, S[i]-1., '-r', lw=0.5)
+        #threesigma = tr[i].std()*3
+        #ax1.plot([time.min(), time.max()],  [threesigma, threesigma], 'r--', lw=1)
+        plt.show()
+    interact(view_image, i=(0,k-1))
