@@ -11,12 +11,10 @@ by Pnevmatikakis et al. 2014
 
 import numpy as np
 
-from sklearn import linear_model 
 from sklearn.decomposition.nmf import _nls_subproblem
 
 from neuralyzer.im import nmf
-
-from neuralyzer.im.smff import noise
+from neuralyzer.im.smff import noise, cvx_foopsi
 
 from neuralyzer import log
 logger = log.get_logger()
@@ -112,10 +110,10 @@ class SMFF(object):
         '''
 
         self.logger.info('Fitting SMFF to data Y.')
-        self.logger.debug('njobs = %s' % njobs)
+        self.logger.info('njobs = %s' % njobs)
 
         if re_init:
-            self.logger.debug('Copying initial model values ..')
+            self.logger.info('Copying initial model values ..')
             self.C_ = self._init_params['C'].copy()
             self.A_ = self._init_params['A'].copy()
             self.b_ = self._init_params['b'].copy()
@@ -128,9 +126,8 @@ class SMFF(object):
         self.logger.info('avg absolute residual = %s ' % mean_residual)
         self._avg_abs_res.append(mean_residual)
 
-        if temp_update_method in ('projgrad', 'constrained_foopsi',):
-            self.logger.debug('calculating noise level for all pixels.')
-            self._pixel_noise = noise.sigma_noise_spd_welch(Y, 1., self.params['noise_range'])
+        self.logger.info('calculating noise level for all pixels.')
+        self._pixel_noise = noise.sigma_noise_spd_welch(Y, 1., self.params['noise_range'])
 
         while not self._stop():
             self.logger.info('iteration %s / %s ' % \
@@ -141,16 +138,22 @@ class SMFF(object):
                     self._pixel_noise, logger=self.logger, njobs=njobs)
             # ROI component post processing
             if not np.mod(self._step+1, morph_mod) and not morph_mod < 0:
-                self.logger.info('morphologically closing spatial components.') 
-                self.A_ = _morph_image_components(self.A_)
+                self.logger.info('morphologically filter spatial components.') 
+                #self.A_ = _morph_image_components(self.A_)
+                self.A_ = filter_spatial_components(self.A_, disk_size=2)
 
             # TODO : threshold spatial components
             if kwargs.get('threshold', False):
                 pass
 
             # UPDATE C, f -----------------------------------------------------
-            self.C_, self.f_ = SMFF.update_C_f(self.C_, self.A_, self.b_, self.f_, Y,
+            self.C_, self.f_, S_, G_ = SMFF.update_C_f(
+                    self.C_, self.A_, self.b_, self.f_, Y,
                     method=temp_update_method, logger=self.logger, **kwargs)
+            if S_ is not None:
+                self.S_ = S_
+            if G_ is not None:
+                self.G_ = G_
 
             # ROI Merging -----------------------------------------------------
             # TODO
@@ -171,7 +174,7 @@ class SMFF(object):
         method = kwargs.pop('method', 'projgrad')
 
         logger = kwargs.pop('logger', None)
-        if logger: logger.debug('Updating C and f with method "%s".' % method)
+        if logger: logger.info('Updating C and f with method "%s".' % method)
 
         # adding the background data to the matrices
         W = np.hstack((A, b))
@@ -179,7 +182,7 @@ class SMFF(object):
 
         if method == 'projgrad':
             tolH = kwargs.get('tolH', 1e-4)
-            maxiter = kwargs.get('maxiter', 200)
+            maxiter = kwargs.get('maxiter', 2000)
             # using the modified scikit-learn project gradient _nls_subproblem
             # update.
             H_, grad, n_iter = _nls_subproblem(Y, W, H, tolH, maxiter)
@@ -187,6 +190,9 @@ class SMFF(object):
             C = H_[:-1, :]
             f = H_[-1, :]
             f = f[:, np.newaxis].T
+
+            S_ = None
+            G = None
 
         elif method == 'multiplicative':
             # since this method is based on multiplication and division we need
@@ -200,30 +206,53 @@ class SMFF(object):
             f = W_[:, -1].T 
             f = f[:, np.newaxis].T
 
+            S_ = None
+            G_ = None
+
         elif method == 'constrained_foopsi':
+            p = kwargs.get('p', 3)
+            N, T = H.shape
+            # projection of the residual onto the spatial components
+            resYA = np.dot((Y - np.dot(W, H)).T, W)
+            H_ = np.zeros((N, T))
+            S_ = np.zeros((N-1, T))
+            G_ = np.zeros((N-1, p))
 
-            # along the cvx_foopsi part of the Pnevmatikakis code on github:
-            # https://github.com/epnev/constrained-foopsi/blob/master/constrained_foopsi.m
+            # block coordinate descent iterations
+            for bcd_it in range(kwargs.get('bcd_iterations', 5)):
+                # randomly permute component indices 
+                for ii in np.random.permutation(range(N)):
+                    # all regular components
+                    if ii < N-1:
+                        resYA[:,ii] = resYA[:,ii] + H[ii]
+                        c_, spks_, b_, sn_, g_ = cvx_foopsi.cvx_foopsi(resYA[:, ii],
+                                noise_range=(0.3, 0.5), p=p)
+                        H_[ii, :] = (c_ + b_).squeeze()
+                        resYA[:,ii] = resYA[:,ii] - H_[ii, :]
+                        S_[ii, :] = spks_.squeeze()
+                        G_[ii, :] = g_[1:].squeeze()
 
-            num_rois = A.shape[1]
-            resYA = np.dot(Y.T, W) - np.dot(H.T, np.dot(W.T, W))
-            nA = (W**2).sum()
+                    # the background
+                    else:
+                        resYA[:,ii] = resYA[:,ii] + H[ii]
+                        H_[ii, :] = resYA[:, ii].clip(0, np.inf)
+                        resYA[:,ii] = resYA[:,ii] - H_[ii, :]
 
-            gammas = []
-            baseline = []
-            c0 = []
+            C = H_[:N-1,:]
+            f = H_[N-1,:]
+            f = f[:, np.newaxis].T
 
-        return C, f 
+        return C, f, S_, G_ 
 
 
     @staticmethod
-    def update_A_b(C, A, b, f, Y, noise, **kwargs):
+    def update_A_b(C, A, b, f, Y, pixel_noise, **kwargs):
         '''
         minimize || A ||_1
         subject to : A, b >= 0, ||Y(i,:) - A(i,:)C - b(i)f.T || < \sigma_i * sqrt(T)
         '''
         logger = kwargs.pop('logger', None)
-        if logger: logger.debug('Updating A and b')
+        if logger: logger.info('Updating A and b')
 
         njobs = kwargs.pop('njobs', N_JOBS)
 
@@ -236,9 +265,10 @@ class SMFF(object):
                 A_.append(nmf.do_lars_fit(H.T, Y[pidx], alpha=sn*np.sqrt(T)))
 
         elif type(njobs) == int:
+                sqrtT = np.sqrt(T)
                 A_ = Parallel(n_jobs=njobs)(
-                        delayed(nmf.do_lars_fit)(H.T, Y[pidx], alpha=noise[pidx]*np.sqrt(T))
-                        for pidx in range(len(noise)))
+                        delayed(nmf.do_lars_fit)(H.T, Y[pidx], alpha=pixel_noise[pidx]*sqrtT)
+                        for pidx in range(len(pixel_noise)))
         else:
             raise ValueError('njobs of improper type. Can only be an int or None.')
 
@@ -270,7 +300,6 @@ def norm(x):
     return np.sqrt(np.dot(x.squeeze(),x.squeeze()))
 
 def _morph_image_components(H):
-    from skimage import morphology
     m, k = H.shape
     w = int(np.sqrt(m))
     imshape = (w,w)
@@ -282,3 +311,23 @@ def morph_close_component(a, imshape):
     from skimage import morphology
     amorph = morphology.closing(a.reshape(imshape[0], imshape[1]))
     return amorph.flatten()
+
+def morph_erode_component(a, imshape, disk_size=1):
+    from skimage import morphology
+    amorph = morphology.erosion(
+            a.reshape(imshape[0], imshape[1]),
+            morphology.disk(disk_size))
+    return amorph.flatten()
+
+def filter_spatial_components(H, filter_method='erosion', **kwargs):
+    ''' '''
+    w = int(np.sqrt(H.shape[0])) # nastily assuming square images here
+    imshape = (w,w)
+    if filter_method == 'erosion':
+        for i, imflat in enumerate(H.T):
+            H[:, i] = morph_erode_component(imflat, imshape, **kwargs)
+    elif filter_method == 'closing':
+        for i, imflat in enumerate(H.T):
+            H[:, i] = morph_erode_component(imflat, imshape, **kwargs)
+    H /= np.linalg.norm(H) # normalize
+    return H
