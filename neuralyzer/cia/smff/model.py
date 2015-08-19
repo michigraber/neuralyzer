@@ -14,8 +14,8 @@ from scipy import sparse
 
 from sklearn.decomposition.nmf import _nls_subproblem
 
-from neuralyzer.im import nmf
-from neuralyzer.im.smff import noise, cvx_foopsi
+from neuralyzer.cia import nmf, foopsi
+from . import noise
 
 from neuralyzer import log
 logger = log.get_logger()
@@ -136,8 +136,8 @@ class SMFF(object):
                             'f' : np.random.rand(1, T),
                             }[k]
         else:
-            from . import _init_model
-            A, C, b, f = _init_model.greedy(*args, **kwargs)
+            from . import greedy_init 
+            A, C, b, f = greedy_init.greedy(*args, **kwargs)
             self._model_init['C'] = C
             self._model_init['A'] = A
             self._model_init['b'] = b
@@ -303,7 +303,7 @@ class SMFF(object):
                     # all regular components
                     if ii < N-1:
                         resYA[:,ii] = resYA[:,ii] + H[ii]
-                        c_, spks_, b_, sn_, g_ = cvx_foopsi.cvx_foopsi(resYA[:, ii],
+                        c_, spks_, b_, sn_, g_ = foopsi.cvx_foopsi(resYA[:, ii],
                                 noise_range=(0.3, 0.5), p=p)
                         H_[ii, :] = (c_ + b_).squeeze()
                         resYA[:,ii] = resYA[:,ii] - H_[ii, :]
