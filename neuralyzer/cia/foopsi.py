@@ -16,7 +16,7 @@ from scipy import sparse
 
 from neuralyzer import log
 
-from . import noise, autoregressive
+from smff import noise, autoregressive
 
 
 
