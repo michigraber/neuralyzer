@@ -144,22 +144,12 @@ class SMFF(object):
             self._model_init['f'] = f
 
 
-    def _stop(self):
-        ''' Simple interation number based stop criterion for now. '''
-        # alternatively we could calculate the residual and estimate whether it
-        # behaves noise style ..
-        return self._step >= self.params['iterations']
-
-
-    def fit_model(self, Y, re_init=True, **kwargs):
-        ''''
-        in any case:
-            - re_init : initialize model parameters from scratch with stored
-              parameters (default=True)
+    def fit_model(self, Y, copy_init=True):
+        ''' Fit the data to the model with the specified parameters.
         '''
 
         self.logger.info('Fitting SMFF model to data Y. [Y] = (%s, %s)' % Y.shape)
-        self._tap_model_init(copy=kwargs.pop('copy_init', True))
+        self._tap_model_init(copy=copy_init)
 
         mean_residual = np.abs(self.calculate_residual(Y)).mean()
         self.logger.info('avg absolute residual = %s ' % mean_residual)
@@ -185,6 +175,13 @@ class SMFF(object):
             self.f_ = self._model_init['f']
 
     
+    def _stop(self):
+        ''' Simple interation number based stop criterion for now. '''
+        # alternatively we could calculate the residual and estimate whether it
+        # behaves noise style ..
+        return self._step >= self.params['iterations']
+
+
     def _do_bcd_step(self, Y, **params):
         '''
         Executes a single block gradient descent iteration step on the whole
