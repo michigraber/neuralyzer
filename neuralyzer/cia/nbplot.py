@@ -119,8 +119,12 @@ def browse_stack(imagestack):
 
 
 def browse_components(A, C, fs, Y=None, S=None, center=True, cmap='cubehelix'):
+
     from IPython.html.widgets import interact
     from matplotlib import gridspec
+    from component_properties import isolate_component
+    import skimage
+
     d, k = A.shape
     k, T = C.shape
     ims = np.sqrt(d)
@@ -138,21 +142,31 @@ def browse_components(A, C, fs, Y=None, S=None, center=True, cmap='cubehelix'):
         S /= np.array([S.max(axis=1)]*T).T
         #S *= np.array([tr.max(axis=1)]*T).T
     time = np.linspace(0, T/fs-1/fs, T)
+
     def view_image(i):
         #fig, ax = plt.subplots(nrows=2, ncols=1, figsize=(15, 12))
         # image
+
         fig = plt.figure(figsize=(14, 14))
-        gs = gridspec.GridSpec(2, 1, height_ratios=[3, 1])
-        ax0 = plt.subplot(gs[0])
+        gs = gridspec.GridSpec(2, 2, height_ratios=[2, 1])
+        ax0 = plt.subplot(gs[0, 0])
         ax0.grid(False)
         ax0.imshow(A[:,i].reshape(ims, ims), cmap=cmap, interpolation=None)
         ax0.set_title('Frame: %s' % i)
+        ax1 = plt.subplot(gs[0, 1])
+        ax1.grid(False)
+        iso = isolate_component(A[:, i].reshape(ims, ims))
+        ax1.imshow(iso, cmap='gray')
+        print 'size of segments: ', np.bincount(skimage.measure.label(iso).ravel())[1:]
         # trace
-        ax1 = plt.subplot(gs[1])
-        ax1.plot(time, tr[i])
-        if Y is not None: ax1.plot(time, P[:,i]-1.)
-        if S is not None: ax1.plot(time, S[i]-1., '-r', lw=0.5)
-        #threesigma = tr[i].std()*3
-        #ax1.plot([time.min(), time.max()],  [threesigma, threesigma], 'r--', lw=1)
+        ax2 = plt.subplot(gs[1, :])
+        ax2.plot(time, tr[i])
+        if Y is not None:
+            isop = Y[iso.flatten(),:].mean(axis=0)
+            dff = isop/isop.mean()
+            ax2.plot(time, dff-2., 'gray', lw=1)
+            ax2.plot(time, P[:,i]-2.)
+        if S is not None:
+            ax2.plot(time, (dff.max()-1.)*S[i]-1., '-r', lw=0.5)
         plt.show()
     interact(view_image, i=(0,k-1))
