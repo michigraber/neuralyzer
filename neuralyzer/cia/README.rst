@@ -1,3 +1,3 @@
 
-Calcium Imaging Analysis Codes
-==============================
+Calcium Imaging Analysis
+========================
