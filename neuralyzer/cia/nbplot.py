@@ -1,4 +1,5 @@
 
+import os
 
 import numpy as np
 
@@ -118,7 +119,7 @@ def browse_stack(imagestack):
     interact(view_image, i=(0,n-1))
 
 
-def browse_components(A, C, fs, Y=None, S=None, center=True, cmap='cubehelix'):
+def browse_components(A, C, fs, G=None, Y=None, S=None, center=True, cmap='cubehelix', outpath=None):
 
     from IPython.html.widgets import interact
     from matplotlib import gridspec
@@ -168,5 +169,16 @@ def browse_components(A, C, fs, Y=None, S=None, center=True, cmap='cubehelix'):
             ax2.plot(time, P[:,i]-2.)
         if S is not None:
             ax2.plot(time, (dff.max()-1.)*S[i]-1., '-r', lw=0.5)
+            events = (S[i] > S[i].std()*10.)
+            print 'num events: ', events.sum()
+            print 'mean events size: ', C[i,events].mean()/C[i].std()
+
+        ax2.set_xlabel('time [s]')
+
+        if G is not None:
+            print 'G: ', G[i]
+        
+        if outpath is not None:
+            fig.savefig(os.path.join(outpath, 'component_{0}.png'.format(i)))
         plt.show()
     interact(view_image, i=(0,k-1))
