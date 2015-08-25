@@ -1,6 +1,6 @@
 
-Calcium Imaging Analysis Codes
-==============================
+Calcium Imaging Analysis
+========================
 
 Signal demixing, component extraction and event inference ..
 
