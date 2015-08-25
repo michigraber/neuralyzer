@@ -96,3 +96,34 @@ def isolate_component(img):
     background = np.argmax(label_count)
     img[labels != background] = 255
     return img
+
+
+def measure(A, C, S):
+
+    d, k = A.shape 
+    ims = int(np.sqrt(d))
+
+    ms = {
+            'size': [],
+            'num' : [], 
+            'max_size' : [],
+            'labels' : [],
+            'num_events' : [],
+            'signal_to_noise' : [],
+            }
+
+    for ki, a in enumerate(A.T):
+        iso = isolate_component(a.reshape(ims,ims))
+        labels = skimage.measure.label(iso, connectivity=1)
+        label_count = np.bincount(labels.ravel())[1:] # zero is background
+        ms['labels'].append(labels)
+        ms['size'].append(label_count)
+        ms['max_size'].append(label_count.max())
+        ms['num'].append(len(label_count))
+
+        events = S[ki] > S[ki].std()*10.
+        ms['num_events'].append(events.sum())
+        ms['signal_to_noise'].append(C[ki,events].mean()/C[ki, ~events].std())
+
+    return ms
+
