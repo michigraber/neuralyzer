@@ -40,6 +40,7 @@ class DataHandler(object):
             raise ValueError('The root_path provided is not a directory.')
         self.logger = logger
         self.logger.debug('root_path set to %s' % self._root_path)
+        self._subdirs = {}
 
     @property
     def root_path(self):
@@ -67,19 +68,26 @@ class DataHandler(object):
                     self.logger.error('Could not save cache.')
         return data
 
-    def get_listdir(self, path='', pat=r''):
+    def listdir(self, path='', pat=r'', expats=[], recursive=False):
         if not os.path.isabs(path):
             path = os.path.join(self.root_path, path)
         if not os.path.isdir(path):
             raise ValueError("The path provided ain't a directory!")
-        pathcont = [(fn, os.path.getsize(os.path.join(path, fn)))
-                for fn in os.listdir(path) if re.match(pat, fn)]
+        if recursive:
+            pathcont = [
+                    os.path.join(dp, f) for dp, dn, fn in os.walk(path) for f in fn
+                    if (re.match(pat, os.path.join(dp, f))
+                        and not any([re.match(ep, os.path.join(dp, f)) for ep in expats])
+                       )
+                    ]
+        else:
+           pathcont = [
+                    os.path.join(path, f) for f in os.listdir(path)
+                    if (re.match(pat, os.path.join(path, f))
+                        and not any([re.match(ep, os.path.join(path, f)) for ep in expats])
+                       )
+                    ]
         return pathcont
-
-    def print_listdir(self, path='', pat=r''):
-        pathcont = self.get_listdir(path=path, pat=pat)
-        for fn, size in pathcont:
-            print('{f} \t {s}'.format(f=fn, s=sizeof_fmt(size)))
 
 
 def sizeof_fmt(num, suffix='B'):
@@ -88,3 +96,9 @@ def sizeof_fmt(num, suffix='B'):
             return "%3.1f %s%s" % (num, unit, suffix)
         num /= 1024.0
     return "%.1f %s%s" % (num, 'Yi', suffix)
+
+
+
+
+#li = [os.path.join(dp, f) for dp, dn, fn in os.walk(os.path.expanduser(dh._root_path)) for f in fn
+        #if (re.match('.*.ipynb$', os.path.join(dp, f)) and not any([re.match(expat, os.path.join(dp, f)) for expat in []]))]
