@@ -68,14 +68,16 @@ class DataHandler(object):
                     self.logger.error('Could not save cache.')
         return data
 
-    def listdir(self, path='', pat=r'', expats=[], recursive=False):
+    def listdir(self, path='', pat=r'', expats=[], recursive=False, followlinks=False):
         if not os.path.isabs(path):
             path = os.path.join(self.root_path, path)
+        if not os.path.exists(path):
+            raise ValueError("The path provided, %s, does not exist!" % path)
         if not os.path.isdir(path):
-            raise ValueError("The path provided ain't a directory!")
+            raise ValueError("The path provided, %s, ain't a directory!" % path)
         if recursive:
             pathcont = [
-                    os.path.join(dp, f) for dp, dn, fn in os.walk(path) for f in fn
+                    os.path.join(dp, f) for dp, dn, fn in os.walk(path, followlinks=followlinks) for f in fn
                     if (re.match(pat, os.path.join(dp, f))
                         and not any([re.match(ep, os.path.join(dp, f)) for ep in expats])
                        )
@@ -88,6 +90,12 @@ class DataHandler(object):
                        )
                     ]
         return pathcont
+
+
+def place_file_in_same_dir(reffile, filename):
+    '''
+    '''
+    path_root = os.path.split()
 
 
 def sizeof_fmt(num, suffix='B'):
