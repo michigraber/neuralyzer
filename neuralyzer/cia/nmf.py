@@ -8,7 +8,7 @@ Non-Negative Matrix factorization implementations.
 import numpy as np
 
 try:
-    from joblib import Parallel, delayed
+    from sklearn.externals.joblib import Parallel, delayed
     N_JOBS = -1
 except:
     print 'joblib could not be imported. NO PARALLEL JOB EXECUTION!'
