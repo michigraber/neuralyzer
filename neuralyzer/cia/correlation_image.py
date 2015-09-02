@@ -9,7 +9,7 @@ from neuralyzer import log
 logger = log.get_logger()
 
 try:
-    from joblib import Parallel, delayed
+    from sklearn.externals.joblib import Parallel, delayed
     HAS_JOBLIB = True
     N_JOBS = -1
 except:
