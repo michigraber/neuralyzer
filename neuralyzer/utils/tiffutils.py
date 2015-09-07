@@ -21,13 +21,13 @@ def imarray_from_files_in_directory(directory, pat=r'\w*.tif'):
 
     firstdata = dh.get_data(imagelist[0], cache_data=False)
     if len(firstdata.shape) == 2:
-	shape = firstdata.shape
+        shape = firstdata.shape
     elif len(firstdata.shape) == 3:
         shape = firstdata.shape[1:]
     NImages = len(imagelist)
     imarray = np.zeros((NImages, shape[0], shape[1]),
             firstdata.dtype)
-    
+
     for imind in range(NImages):
         imarray[imind,:,:]= dh.get_data(imagelist[imind], cache_data=False)
 
