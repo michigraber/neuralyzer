@@ -5,9 +5,6 @@
 ##
 ## September 2015
 
-# choose the correct image .. that contains a complete eups installation
-# of all dependencies required by your webapp and the deployment dependency
-# modWSGI
 FROM ubuntu:14.04
 
 MAINTAINER Michael Graber <michael.graber@gmail.com>
