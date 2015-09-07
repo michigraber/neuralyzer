@@ -1,13 +1,20 @@
 '''
-An implementation of Calcium Signal extraction, demixing and ROI estimation
-along the model and algorithm described in 
+A structured approach to calcium signal extraction, demixing and ROI estimation
+from calcium imaging data along the model and algorithm described by
+Pnevmatikakis et al. in [1].
 
-> A structured matrix factorization framework for large scale calcium imaging
-> data analysis.
+Author : Michael H. Graber <michigraber@gmail.com>
+License : MIT License
 
-by Pnevmatikakis et al. 2014
+References
+----------
+[1] Pnevmatikakis et al. (2014) A structured matrix factorization framework
+for large scale calcium imaging data analysis. arXiv preprint
+arXiv:1409.2903.  http://arxiv.org/abs/1409.2903
 
 '''
+
+from __future__ import print_function
 
 import numpy as np
 from scipy import sparse
@@ -25,7 +32,7 @@ try:
     from sklearn.externals.joblib import Parallel, delayed
     N_JOBS = -1
 except:
-    print 'joblib could not be imported. NO PARALLEL JOB EXECUTION!'
+    print('joblib could not be imported. NO PARALLEL JOB EXECUTION!')
     N_JOBS = None 
 
 
@@ -82,12 +89,19 @@ class SMFF(object):
 
     'foopsi'
     ````````
-    ar_order : (default=3)
+    foopsi_autoreg_p : (default=3)
         Order of the autoregressive model for the calcium signal.
 
-    foopsi_bcd_iterations : (default=5)
+    foopsi_bcd_its : (default=5)
         Block coordinate descent iterations for the foopsi temporal component
         update.
+
+
+    References
+    ----------
+    [1] Pnevmatikakis et al. (2014) A structured matrix factorization framework
+    for large scale calcium imaging data analysis. arXiv preprint
+    arXiv:1409.2903.  http://arxiv.org/abs/1409.2903
 
     '''
 
@@ -98,15 +112,31 @@ class SMFF(object):
         self._step = 0
         self.avg_abs_res_ = []
 
+
+        # SET UP THE PARAMETERS
+
         # default model parameters
         self.params = {
-                'temporal_update_method' : 'projgrad',
+                'temporal_update_method' : 'foopsi',
                 'noise_range' : (0.25, 0.5), # in fs units
                 'njobs' : -1,
                 'iterations': 3,
                 'filt_it': 0,
                 }
         self.params.update(**kwargs)
+
+        # conditional parameters
+        if self.params['temporal_update_method'] == 'foopsi':
+            self.params.update({
+                'foopsi_bcd_its' : kwargs.get('foopsi_bcd_its', 5),
+                'foopsi_autoreg_p' : kwargs.get('foopsi_autoreg_p', 3),
+                })
+        elif self.params['temporal_update_method'] == 'projgrad':
+            self.params.update({
+                'projgrad_tolH' : kwargs.get('projgrad_tolH', 1e-4),
+                'projgrad_maxiter' : kwargs.get('maxiter', 2000),
+                })
+
 
         paramstring = ', '.join("{!s}={!r}".format(k,v) for (k,v) in self.params.items())
         self.logger.info('SMFF({0})'.format(paramstring))
@@ -137,6 +167,7 @@ class SMFF(object):
                             }[k]
         else:
             from . import greedy_init 
+            self.params['greedy_init_params'] = kwargs
             A, C, b, f = greedy_init.greedy(*args, **kwargs)
             self._model_init['C'] = C
             self._model_init['A'] = A
@@ -145,9 +176,7 @@ class SMFF(object):
 
 
     def fit_model(self, Y, copy_init=True):
-        ''' Fit the data to the model with the specified parameters.
-        '''
-
+        ''' Fit the data to the model with the specified parameters.  '''
         self.logger.info('Fitting SMFF model to data Y. [Y] = (%s, %s)' % Y.shape)
         self._tap_model_init(copy=copy_init)
 
@@ -162,6 +191,7 @@ class SMFF(object):
 
     
     def _tap_model_init(self, copy=True):
+        ''' Copy or refer model coefficients to _model_init '''
         if copy:
             self.logger.info('Copying initial model values ..')
             self.C_ = self._model_init['C'].copy()
@@ -177,15 +207,12 @@ class SMFF(object):
     
     def _stop(self):
         ''' Simple interation number based stop criterion for now. '''
-        # alternatively we could calculate the residual and estimate whether it
-        # behaves noise style ..
         return self._step >= self.params['iterations']
 
 
     def _do_bcd_step(self, Y, **params):
-        '''
-        Executes a single block gradient descent iteration step on the whole
-        model.
+        ''' Executes a single block gradient descent iteration step on the
+        whole model.
 
         Model parameters can be overwritten using kwargs here.
         '''
@@ -213,13 +240,12 @@ class SMFF(object):
             self.A_ = filter_spatial_components(self.A_, disk_size=2)
 
         # TODO : threshold spatial components ??
-        if params.get('threshold_A', False):
-            pass
+        #if params.get('threshold_A', False):
+            #pass
 
         # UPDATE C, f ---------------------------------------------------------
         self.C_, self.f_, self.S_, self.G_ = SMFF.update_C_f(
                 self.C_, self.A_, self.b_, self.f_, Y,
-                method=params['temporal_update_method'],
                 logger=self.logger, **params)
 
         # drop inactive components 
@@ -244,64 +270,35 @@ class SMFF(object):
     
     @staticmethod
     def update_C_f(C, A, b, f, Y, **kwargs):
-        '''
-        '''
-        method = kwargs.pop('method', 'projgrad')
+        ''' Update the temporal components C and f.  '''
 
         logger = kwargs.pop('logger', None)
-        if logger: logger.info('Updating C and f with method "%s".' % method)
+        params = kwargs
+        if logger:
+            logger.info('Updating C and f with method "{0}".'.format(
+                params['temporal_update_method']))
 
         # adding the background data to the matrices
         W = np.hstack((A, b))
         H = np.vstack((C, f))
 
-        if method == 'projgrad':
-            tolH = kwargs.get('tolH', 1e-4)
-            maxiter = kwargs.get('maxiter', 2000)
-            # using the modified scikit-learn project gradient _nls_subproblem
-            # update.
-            H_, grad, n_iter = _nls_subproblem(Y, W, H, tolH, maxiter)
-            # rearrangement of output 
-            C = H_[:-1, :]
-            f = H_[-1, :]
-            f = f[:, np.newaxis].T
-
-            S_ = None
-            G = None
-
-        elif method == 'multiplicative':
-            # since this method is based on multiplication and division we need
-            # to ensure that we will not get infinity errors
-            W = W.clip(TINY_POSITIVE_NUMBER, np.inf)
-            H = H.clip(TINY_POSITIVE_NUMBER, np.inf)
-            # we call the multiplicative update from our Morup NMF implementation
-            W_ = nmf.NMF_L0.update_W(Y.T, W.T, H.T)
-            # rearrangement of output 
-            C = W_[:, :-1].T
-            f = W_[:, -1].T 
-            f = f[:, np.newaxis].T
-
-            S_ = None
-            G_ = None
-
-        elif method == 'foopsi':
-            p = kwargs.get('p', 3)
+        if params['temporal_update_method'] == 'foopsi':
             N, T = H.shape
             # projection of the residual onto the spatial components
             resYA = np.dot((Y - np.dot(W, H)).T, W)
             H_ = np.zeros((N, T))
             S_ = np.zeros((N-1, T))
-            G_ = np.zeros((N-1, p))
-
+            G_ = np.zeros((N-1, params['foopsi_autoreg_p']))
             # foopsi block coordinate descent iterations
-            for bcd_it in range(kwargs.get('bcd_iterations', 5)):
+            for bcd_it in range(params['foopsi_bcd_its']):
                 # randomly permute component indices 
                 for ii in np.random.permutation(range(N)):
                     # all regular components
                     if ii < N-1:
                         resYA[:,ii] = resYA[:,ii] + H[ii]
                         c_, spks_, b_, sn_, g_ = foopsi.cvx_foopsi(resYA[:, ii],
-                                noise_range=(0.3, 0.5), p=p)
+                                noise_range=params['noise_range'],
+                                p=params['foopsi_autoreg_p'])
                         H_[ii, :] = (c_ + b_).squeeze()
                         resYA[:,ii] = resYA[:,ii] - H_[ii, :]
                         S_[ii, :] = spks_.squeeze()
@@ -316,23 +313,47 @@ class SMFF(object):
             f = H_[N-1,:]
             f = f[:, np.newaxis].T
 
+        elif params['temporal_update_method'] == 'projgrad':
+            # using the scikit-learn project gradient _nls_subproblem update
+            H_, grad, n_iter = _nls_subproblem(Y, W, H,
+                    params['projgrad_tolH'], params['projgrad_maxiter'])
+            # rearrangement of output 
+            C = H_[:-1, :]
+            f = H_[-1, :]
+            f = f[:, np.newaxis].T
+            S_, G_ = None, None
+
+        elif params['temporal_update_method'] == 'multiplicative':
+            # since this method is based on multiplication and division we need
+            # to ensure that we will not get infinity errors
+            W = W.clip(TINY_POSITIVE_NUMBER, np.inf)
+            H = H.clip(TINY_POSITIVE_NUMBER, np.inf)
+            # we call the multiplicative update from our Morup NMF implementation
+            W_ = nmf.NMF_L0.update_W(Y.T, W.T, H.T)
+            # rearrangement of output 
+            C = W_[:, :-1].T
+            f = W_[:, -1].T 
+            f = f[:, np.newaxis].T
+            S_, G_ = None, None
+
+        else:
+            raise ValueError('temporal_update_method %s not available.' % \
+                    params['temporal_update_method'])
+
         return C, f, S_, G_ 
 
 
     @staticmethod
     def update_A_b(C, A, b, f, Y, pixel_noise, **kwargs):
-        '''
-        minimize || A ||_1
-        subject to : A, b >= 0, ||Y(i,:) - A(i,:)C - b(i)f.T || < \sigma_i * sqrt(T)
-        '''
-        logger = kwargs.pop('logger', None)
-        if logger: logger.info('Updating A and b')
+        ''' Update the spatial components A and the background b.  '''
 
-        njobs = kwargs.pop('njobs', N_JOBS)
+        logger = kwargs.get('logger', None)
+        if logger: logger.info('Updating A and b')
 
         d, T = Y.shape
         H = np.vstack((C, f))
         
+        njobs = kwargs.get('njobs', N_JOBS)
         if njobs is None:
             A_ = []
             for pidx, sn in enumerate(noise):
@@ -341,7 +362,9 @@ class SMFF(object):
         elif type(njobs) == int:
                 sqrtT = np.sqrt(T)
                 A_ = Parallel(n_jobs=njobs)(
-                        delayed(nmf.do_lars_fit)(H.T, Y[pidx], alpha=pixel_noise[pidx]*sqrtT)
+                        delayed(nmf.do_lars_fit)(
+                            H.T, Y[pidx], alpha=pixel_noise[pidx]*sqrtT
+                            )
                         for pidx in range(len(pixel_noise)))
         else:
             raise ValueError('njobs of improper type. Can only be an int or None.')
