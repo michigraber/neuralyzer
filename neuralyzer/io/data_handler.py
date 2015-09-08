@@ -91,11 +91,14 @@ class DataHandler(object):
                     ]
         return pathcont
 
+    def place_file(self, filename, path='.'):
+        if not os.path.isabs(path):
+            path = os.path.join(self.root_path, path)
+        path = os.path.normpath(path)
+        if not os.path.exists(path):
+            os.makedirs(path)
+        return os.path.join(path, filename)
 
-def place_file_in_same_dir(reffile, filename):
-    '''
-    '''
-    path_root = os.path.split()
 
 
 def sizeof_fmt(num, suffix='B'):
