@@ -33,7 +33,7 @@ except:
     #fig.imsave(outfile)
 
 
-def correlation_image(imagestack, njobs=N_JOBS, joblib_tmp_folder='/tmp'):
+def correlation_image(imagestack, njobs=N_JOBS, joblib_tmp_folder='/tmp', joblib_verbosity=0):
     ''' A function that calculates a correlation image from an image stack.
     
     The correlation image is calculated for each pixels by computing 
@@ -53,8 +53,8 @@ def correlation_image(imagestack, njobs=N_JOBS, joblib_tmp_folder='/tmp'):
     if HAS_JOBLIB:
 
         logger.info('calculating correlation image in parallel.')
-        cim = Parallel(n_jobs=njobs)(
-                delayed(mean_pixel_corr)(ims, pidx, (x,y), temp_folder=joblib_tmp_folder)
+        cim = Parallel(n_jobs=njobs, temp_folder=joblib_tmp_folder, verbose=joblib_verbosity)(
+                delayed(mean_pixel_corr)(ims, pidx, (x,y))
                 for pidx in range(npix)
                 )
         cim = np.array(cim).reshape(x,y)
