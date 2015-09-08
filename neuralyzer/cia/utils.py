@@ -1,7 +1,7 @@
 
+import numpy as np
 
 def rescale_stack(imstack, scale, **kwargs):
-
     from skimage import transform
     n, y, x = imstack.shape
     rsstack = []
