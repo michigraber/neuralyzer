@@ -3,6 +3,8 @@ Calculates an image from a movie where each pixel is the mean correlation of
 said pixel with its neighbours in the movie over time.
 '''
 
+from __future__ import print_function
+
 import numpy as np
 
 from neuralyzer import log
@@ -13,7 +15,7 @@ try:
     HAS_JOBLIB = True
     N_JOBS = -1
 except:
-    print 'joblib could not be imported. NO PARALLEL JOB EXECUTION!'
+    print('joblib could not be imported. NO PARALLEL JOB EXECUTION!')
     HAS_JOBLIB = False 
     N_JOBS = False
 
