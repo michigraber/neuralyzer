@@ -20,7 +20,20 @@ except:
     N_JOBS = False
 
 
-def correlation_image(imagestack, njobs=N_JOBS):
+#def save_ci_from_file(infile, outfile, save_ci_data=True, save_cache_infile=False):
+    #''' '''
+    #from neuralyzer import get_data
+    #from matplotlib import pyplot as plt
+
+    #stackdata = get_data(infile, save_cache=save_cache_infile)
+    #ci = correlation_image(stackdata)
+    
+    #fig, ax = plt.subplots()
+    #plt.imshow(ci, cmap='cubehelix')
+    #fig.imsave(outfile)
+
+
+def correlation_image(imagestack, njobs=N_JOBS, joblib_tmp_folder='/tmp'):
     ''' A function that calculates a correlation image from an image stack.
     
     The correlation image is calculated for each pixels by computing 
@@ -41,7 +54,7 @@ def correlation_image(imagestack, njobs=N_JOBS):
 
         logger.info('calculating correlation image in parallel.')
         cim = Parallel(n_jobs=njobs)(
-                delayed(mean_pixel_corr)(ims, pidx, (x,y))
+                delayed(mean_pixel_corr)(ims, pidx, (x,y), temp_folder=joblib_tmp_folder)
                 for pidx in range(npix)
                 )
         cim = np.array(cim).reshape(x,y)
