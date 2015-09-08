@@ -13,6 +13,11 @@ LABEL Description="Docker container to serve the neuralyzer package in an jupyte
 
 USER root
 
+RUN apt-get update && apt-get install -yq --no-install-recommends \
+    python-qt4 \
+    && apt-get clean
+
+
 # Install Python 3 science and data analysis packages
 RUN conda install --yes \
     'ipywidgets=4.0*' \
