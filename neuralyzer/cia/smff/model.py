@@ -31,6 +31,7 @@ logger = log.get_logger()
 try:
     from sklearn.externals.joblib import Parallel, delayed
     N_JOBS = -1
+    JOBLIB_TMP_FOLDER = '/tmp'
 except:
     print('joblib could not be imported. NO PARALLEL JOB EXECUTION!')
     N_JOBS = None 
@@ -344,7 +345,7 @@ class SMFF(object):
 
 
     @staticmethod
-    def update_A_b(C, A, b, f, Y, pixel_noise, **kwargs):
+    def update_A_b(C, A, b, f, Y, pixel_noise, joblib_tmp_folder=JOBLIB_TMP_FOLDER, **kwargs):
         ''' Update the spatial components A and the background b.  '''
 
         logger = kwargs.get('logger', None)
@@ -361,7 +362,7 @@ class SMFF(object):
 
         elif type(njobs) == int:
                 sqrtT = np.sqrt(T)
-                A_ = Parallel(n_jobs=njobs)(
+                A_ = Parallel(n_jobs=njobs, temp_folder=joblib_tmp_folder)(
                         delayed(nmf.do_lars_fit)(
                             H.T, Y[pidx], alpha=pixel_noise[pidx]*sqrtT
                             )

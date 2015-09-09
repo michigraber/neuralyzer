@@ -17,6 +17,7 @@ from scipy import ndimage
 try:
     from sklearn.externals.joblib import Parallel, delayed
     N_JOBS = -1
+    JOBLIB_TMP_FOLDER = '/tmp'
 except:
     print('joblib could not be imported. NO PARALLEL JOB EXECUTION!')
     N_JOBS = None 
@@ -119,7 +120,7 @@ def greedy(Y, components=((5, 2, 30), ), spl0_comps=0.1, iterations=5, njobs=N_J
     return A, C, b, f
 
 
-def blur_images(imagestack, sg, njobs=N_JOBS):
+def blur_images(imagestack, sg, njobs=N_JOBS, joblib_tmp_folder=JOBLIB_TMP_FOLDER):
     ''' 2D Gaussian filter on all images of imagestack. '''
 
     if njobs is None:
@@ -128,7 +129,7 @@ def blur_images(imagestack, sg, njobs=N_JOBS):
             bis.append(ndimage.gaussian_filter(imagestack[ii,:,:], sg))
 
     elif type(njobs) == int:
-        bis = Parallel(n_jobs=njobs)(
+        bis = Parallel(n_jobs=njobs, temp_folder=joblib_tmp_folder)(
                 delayed(ndimage.gaussian_filter)(imagestack[ii,:,:], sg)
                 for ii in range(imagestack.shape[0])
                 )
