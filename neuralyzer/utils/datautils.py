@@ -29,7 +29,6 @@ def get_meta_file(filename, meta_file_name='data_meta.json', dirretracts=3):
     for _ in range(dirretracts):
         trunk, tail = os.path.split(trunk)
         meta_file = os.path.join(trunk, meta_file_name)
-        print(meta_file)
         if os.path.exists(meta_file):
             return meta_file
 
