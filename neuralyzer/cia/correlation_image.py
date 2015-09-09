@@ -54,7 +54,9 @@ def correlation_image(imagestack, njobs=N_JOBS, joblib_tmp_folder=JOBLIB_TMP_FOL
     if HAS_JOBLIB:
 
         logger.info('calculating correlation image in parallel.')
-        cim = Parallel(n_jobs=njobs, temp_folder=joblib_tmp_folder, verbose=joblib_verbosity)(
+        # TODO : what about the temp folder now?
+        #cim = Parallel(n_jobs=njobs, temp_folder=joblib_tmp_folder, verbose=joblib_verbosity)(
+        cim = Parallel(n_jobs=njobs, verbose=joblib_verbosity)(
                 delayed(mean_pixel_corr)(ims, pidx, (x,y))
                 for pidx in range(npix)
                 )
