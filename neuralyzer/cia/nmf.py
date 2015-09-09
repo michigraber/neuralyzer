@@ -227,7 +227,9 @@ class NMF_L0(object):
                 hs.append(ll.coef_path_)
 
         else:
-            pout = Parallel(n_jobs=njobs, temp_folder=joblib_tmp_folder)(
+            # TODO : what about the temp folder now?
+            #pout = Parallel(n_jobs=njobs, temp_folder=joblib_tmp_folder)(
+            pout = Parallel(n_jobs=njobs)(
                     delayed(do_lars_fit)(W, V[:,pidx], return_path=True)
                     for pidx in range(V.shape[1])
                     )
