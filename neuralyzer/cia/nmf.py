@@ -12,6 +12,7 @@ import numpy as np
 try:
     from sklearn.externals.joblib import Parallel, delayed
     N_JOBS = -1
+    JOBLIB_TMP_FOLDER = '/tmp'
 except:
     print('joblib could not be imported. NO PARALLEL JOB EXECUTION!')
     N_JOBS = None 
@@ -210,7 +211,7 @@ class NMF_L0(object):
 
 
     @staticmethod
-    def update_H(V, W, spl0=0.8, njobs=N_JOBS):
+    def update_H(V, W, spl0=0.8, njobs=N_JOBS, joblib_tmp_folder=JOBLIB_TMP_FOLDER):
         '''
         !!! WARNING : requires tweaked scikit-learn LassoLars implementation
         that allows non-negativity, ie positivity, constraint on H.
@@ -228,7 +229,7 @@ class NMF_L0(object):
                 hs.append(ll.coef_path_)
 
         else:
-            pout = Parallel(n_jobs=njobs)(
+            pout = Parallel(n_jobs=njobs, temp_folder=joblib_tmp_folder)(
                     delayed(do_lars_fit)(W, V[:,pidx], return_path=True)
                     for pidx in range(V.shape[1])
                     )

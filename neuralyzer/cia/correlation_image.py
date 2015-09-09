@@ -13,6 +13,7 @@ logger = log.get_logger()
 try:
     from sklearn.externals.joblib import Parallel, delayed
     HAS_JOBLIB = True
+    JOBLIB_TMP_FOLDER = '/tmp'
     N_JOBS = -1
 except:
     print('joblib could not be imported. NO PARALLEL JOB EXECUTION!')
@@ -33,7 +34,7 @@ except:
     #fig.imsave(outfile)
 
 
-def correlation_image(imagestack, njobs=N_JOBS, joblib_tmp_folder='/tmp', joblib_verbosity=0):
+def correlation_image(imagestack, njobs=N_JOBS, joblib_tmp_folder=JOBLIB_TMP_FOLDER, joblib_verbosity=0):
     ''' A function that calculates a correlation image from an image stack.
     
     The correlation image is calculated for each pixels by computing 
