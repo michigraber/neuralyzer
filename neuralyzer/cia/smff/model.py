@@ -362,7 +362,9 @@ class SMFF(object):
 
         elif type(njobs) == int:
                 sqrtT = np.sqrt(T)
-                A_ = Parallel(n_jobs=njobs, temp_folder=joblib_tmp_folder)(
+                # TODO : what about the temp folder now?
+                #A_ = Parallel(n_jobs=njobs, temp_folder=joblib_tmp_folder)(
+                A_ = Parallel(n_jobs=njobs)(
                         delayed(nmf.do_lars_fit)(
                             H.T, Y[pidx], alpha=pixel_noise[pidx]*sqrtT
                             )
