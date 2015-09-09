@@ -5,13 +5,15 @@ Non-Negative Matrix factorization implementations.
 
 '''
 
+from __future__ import print_function
+
 import numpy as np
 
 try:
     from sklearn.externals.joblib import Parallel, delayed
     N_JOBS = -1
 except:
-    print 'joblib could not be imported. NO PARALLEL JOB EXECUTION!'
+    print('joblib could not be imported. NO PARALLEL JOB EXECUTION!')
     N_JOBS = None 
 
 from neuralyzer.log import get_logger
@@ -60,7 +62,7 @@ def nmf_cvxpy(A, k, max_iter=30):
         if prob.status != cvx.OPTIMAL:
             raise Exception("Solver did not converge!")
         
-        print 'Iteration {}, residual norm {}'.format(iter_num, prob.value)
+        print('Iteration {}, residual norm {}'.format(iter_num, prob.value))
         residual[iter_num-1] = prob.value
 
         # Convert variable to NumPy array constant for next iteration.
