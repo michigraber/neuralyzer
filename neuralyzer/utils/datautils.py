@@ -23,14 +23,17 @@ def get_data(filename, cache_data=True, **kwargs):
     return data_handler.DataHandler().get_data(filename, cache_data=cache_data, **kwargs)
 
 
-def get_meta_file(filename, meta_file_name='data_meta.json', dirretracts=3):
+def get_meta_file(path, meta_file_name='data_meta.json', dirretracts=3):
     ''' Search for data_meta.json file in the parent directories '''
-    trunk = filename
+    if os.path.isfile(trunk):
+        trunk, _ = os.path.split(path)
+    else:
+        trunk = path
     for _ in range(dirretracts):
-        trunk, tail = os.path.split(trunk)
         meta_file = os.path.join(trunk, meta_file_name)
         if os.path.exists(meta_file):
             return meta_file
+        trunk, tail = os.path.split(trunk)
 
 
 def get_meta_info(filename, dirrectracts=3, idselector=r'.*/(?P<id>\w*)_.*.\w*$'):
