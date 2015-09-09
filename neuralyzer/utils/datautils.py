@@ -1,4 +1,9 @@
 
+import os
+import re
+import json
+
+
 def get_data(filename, cache_data=True, **kwargs):
     ''' A function to load tiff data files and its faster loading caches.
 
@@ -16,3 +21,28 @@ def get_data(filename, cache_data=True, **kwargs):
      '''
     from ..io import data_handler
     return data_handler.DataHandler().get_data(filename, cache_data=cache_data, **kwargs)
+
+
+def get_meta_file(filename, meta_file_name='data_meta.json', dirretracts=3):
+    ''' Search for data_meta.json file in the parent directories '''
+    trunk = filename
+    for _ in range(dirretracts):
+        trunk, tail = os.path.split(trunk)
+        meta_file = os.path.join(trunk, meta_file_name)
+        print(meta_file)
+        if os.path.exists(meta_file):
+            return meta_file
+
+
+def get_meta_info(filename, dirrectracts=3, idselector=r'.*/(?P<id>\w*)_.*.\w*$'):
+    ''' Search for data_meta.json and return its content + recid '''
+    recidmatch = re.match(idselector, filename)
+    if recidmatch is None:
+        raise ValueError('Could not identify id-pattern.')        
+    recid = recidmatch.groupdict()['id']
+    metafile = get_meta_file(filename, dirretracts=dirrectracts)
+    if metafile is None:
+        return
+    with open(metafile, 'r') as jfi:
+        metadict = json.load(jfi)
+    return metadict, recid
