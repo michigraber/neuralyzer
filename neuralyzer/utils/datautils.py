@@ -25,7 +25,7 @@ def get_data(filename, cache_data=True, **kwargs):
 
 def get_meta_file(path, meta_file_name='data_meta.json', dirretracts=3):
     ''' Search for data_meta.json file in the parent directories '''
-    if os.path.isfile(trunk):
+    if os.path.isfile(path):
         trunk, _ = os.path.split(path)
     else:
         trunk = path
