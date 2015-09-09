@@ -46,7 +46,7 @@ def get_meta_info(path, dirrectracts=3, idselector=r'.*/(?P<id>\w*)_.*.\w*$'):
     return metadict
 
 
-def get_rec_id(filename, idselector=r'.*/(?P<id>\w*)_.*.\w*$'):
+def get_rec_id(filename, idselector=r'.*/(?P<id>[a-zA-Z0-9]*)_.*.\w*$'):
     ''' Read-out recording id from filename. '''
     recidmatch = re.match(idselector, filename)
     if recidmatch is None:
