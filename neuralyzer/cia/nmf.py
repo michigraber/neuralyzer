@@ -201,9 +201,11 @@ class NMF_L0(object):
                         ).clip( TINY_POSITIVE_NUMBER, np.inf)
                 self._H = NMF_L0.update_H(V, self._W, spl0=self.spl0, njobs=njobs,
                         ).clip( TINY_POSITIVE_NUMBER, np.inf)
-            except Exception, e:
+            # py3 cleanup TODO
+            #except Exception, e:
+            except Exception:
                 self.logger.warning('CANNOT UPDATE at iteration %s' % i)                
-                self.logger.error(e, exc_info=True)
+                #self.logger.error(e, exc_info=True)
                 break 
 
 
