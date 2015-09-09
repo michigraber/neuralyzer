@@ -9,6 +9,8 @@ Here we implemented a fast heuristic model initialization procedure along the
 original reference by Pnevmatikakis et al. 2014.
 '''
 
+from __future__ import print_function
+
 import numpy as np 
 from scipy import ndimage
 
@@ -16,7 +18,7 @@ try:
     from sklearn.externals.joblib import Parallel, delayed
     N_JOBS = -1
 except:
-    print 'joblib could not be imported. NO PARALLEL JOB EXECUTION!'
+    print('joblib could not be imported. NO PARALLEL JOB EXECUTION!')
     N_JOBS = None 
 
 from .. import nmf 
