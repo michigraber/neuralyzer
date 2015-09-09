@@ -36,15 +36,20 @@ def get_meta_file(path, meta_file_name='data_meta.json', dirretracts=3):
         trunk, tail = os.path.split(trunk)
 
 
-def get_meta_info(filename, dirrectracts=3, idselector=r'.*/(?P<id>\w*)_.*.\w*$'):
+def get_meta_info(path, dirrectracts=3, idselector=r'.*/(?P<id>\w*)_.*.\w*$'):
     ''' Search for data_meta.json and return its content + recid '''
-    recidmatch = re.match(idselector, filename)
-    if recidmatch is None:
-        raise ValueError('Could not identify id-pattern.')        
-    recid = recidmatch.groupdict()['id']
-    metafile = get_meta_file(filename, dirretracts=dirrectracts)
+    metafile = get_meta_file(path, dirretracts=dirrectracts)
     if metafile is None:
         return
     with open(metafile, 'r') as jfi:
         metadict = json.load(jfi)
-    return metadict, recid
+    return metadict
+
+
+def get_rec_id(filename, idselector=r'.*/(?P<id>\w*)_.*.\w*$'):
+    ''' Read-out recording id from filename. '''
+    recidmatch = re.match(idselector, path)
+    if recidmatch is None:
+        raise ValueError('Could not identify pattern.')        
+    recid = recidmatch.groupdict()['id']
+    return recid
