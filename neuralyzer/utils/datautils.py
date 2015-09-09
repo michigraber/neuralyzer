@@ -48,7 +48,7 @@ def get_meta_info(path, dirrectracts=3, idselector=r'.*/(?P<id>\w*)_.*.\w*$'):
 
 def get_rec_id(filename, idselector=r'.*/(?P<id>\w*)_.*.\w*$'):
     ''' Read-out recording id from filename. '''
-    recidmatch = re.match(idselector, path)
+    recidmatch = re.match(idselector, filename)
     if recidmatch is None:
         raise ValueError('Could not identify pattern.')        
     recid = recidmatch.groupdict()['id']
