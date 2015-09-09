@@ -129,7 +129,9 @@ def blur_images(imagestack, sg, njobs=N_JOBS, joblib_tmp_folder=JOBLIB_TMP_FOLDE
             bis.append(ndimage.gaussian_filter(imagestack[ii,:,:], sg))
 
     elif type(njobs) == int:
-        bis = Parallel(n_jobs=njobs, temp_folder=joblib_tmp_folder)(
+        # TODO : what about the temp folder now?
+        #bis = Parallel(n_jobs=njobs, temp_folder=joblib_tmp_folder)(
+        bis = Parallel(n_jobs=njobs)(
                 delayed(ndimage.gaussian_filter)(imagestack[ii,:,:], sg)
                 for ii in range(imagestack.shape[0])
                 )
