@@ -4,11 +4,14 @@ neuralyzer logging tools.
 
 import sys
 import logging
+import time
 
 LOGGERNAME = 'neuralyzer'
 
 STDOUT_LOGLEVEL = 'DEBUG'
 FILE_LOGLEVEL = 'INFO'
+
+PROFILE = True
 
 LOGFILE = 'neuralyzer.log'
 
@@ -56,3 +59,20 @@ def _create_logger(**kwargs):
     logger.debug('stdoutloglevel: '+stdoutloglevel)
 
     return logger
+
+
+
+def log_profiling(func, profile=PROFILE):
+    ''' Profiling decorator.
+    '''
+    def wrap(*args, **kwargs):
+        t0 = time.time()
+        out = func(*args, **kwargs)
+        t = time.time() - t0
+        if profile:
+            get_logger().debug('Execution of function {f} in {t:.2f} s.'.format(
+                f=func.__name__, 
+                t=t))
+        return out
+
+    return wrap
