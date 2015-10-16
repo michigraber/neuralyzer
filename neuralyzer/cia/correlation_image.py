@@ -34,7 +34,7 @@ except:
     #fig.imsave(outfile)
 
 
-def correlation_image(imagestack, njobs=N_JOBS, joblib_tmp_folder=JOBLIB_TMP_FOLDER, joblib_verbosity=0):
+def correlation_image(imagestack, njobs=N_JOBS, joblib_verbosity=0):
     ''' A function that calculates a correlation image from an image stack.
     
     The correlation image is calculated for each pixels by computing 
