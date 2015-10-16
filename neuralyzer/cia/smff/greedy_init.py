@@ -1,5 +1,5 @@
 '''
-Model Initialization Code.
+@Model Initialization Code.
 
 Since NMF has not a unique solution, the outcome of the optimization procedure
 depends on the initialization procedure. Random initialization is typically not
@@ -48,7 +48,7 @@ def greedy(Y, components=((5, 2, 30), ), spl0_comps=0.1, iterations=5, njobs=N_J
     d, T = Y.shape
     ims = int(np.sqrt(d))
 
-    logger.debug('copying data ..')
+    logger.debug('copying data') 
     R = Y.copy()
 
     # subtract 'background' ..
@@ -57,30 +57,43 @@ def greedy(Y, components=((5, 2, 30), ), spl0_comps=0.1, iterations=5, njobs=N_J
     b /= np.linalg.norm(b)
     b = b[:, np.newaxis]
     f = np.dot(R.T, b).T
-    #R  = (R - np.dot(b, f)).clip(TINY_POSITIVE_NUMBER, np.inf)
     R  = (R - np.dot(b, f))
 
     A, C = [], []
 
+    sigmagauss = 0
+
     for num_comps, sg, wsmult in components:
 
-        # calculate the window size
-        ws = int(sg*wsmult)
-        ws = ws+1 if not np.mod(ws, 2) else ws # make it odd
+        if sigmagauss != sg:
+            sigmagauss = sg
+            # calculate the window size
+            ws = int(sigmagauss*wsmult)
+            ws = ws+1 if not np.mod(ws, 2) else ws # make it odd
+            newblur = True
+        else:
+            newblur = False
 
-        logger.info('Finding %s components with sigma %s and window size %s' % (num_comps, sg, ws))
+        logger.info('Finding %s components with sigma %s and window size %s' % (num_comps, sigmagauss, ws))
+                
+        if newblur:
+            rho = blur_images(R.T.reshape(T,ims,ims), sigmagauss,
+                    njobs=njobs).reshape(T,ims**2).T
         
         for k in range(num_comps):
             logger.debug('component %s / %s' % (k+1, num_comps))
 
-            rho = blur_images(R.T.reshape(T,ims,ims),sg, njobs=njobs
-                    ).reshape(T,ims**2).T
+            # find maximum coords in max of gauss convolved imagestack (rho)
             rhomax = rho.max(axis=1)
             wcent = np.argmax(rhomax)
+            # 2D image coordinates
             wcent = (np.mod(wcent, ims), int(wcent/ims))
-            wmask = window_mask(wcent, (ims, ims), ws).flatten()
-            Rw = R[wmask, :]
+            wmask = window_mask(wcent, (ims, ims), ws)
+            mask_w = wmask.sum(axis=0).max()
+            mask_h = wmask.sum(axis=1).max()
+            wmask = wmask.flatten()
 
+            Rw = R[wmask, :]
             H_init = rhomax[wmask].flatten()
             H_init /= np.linalg.norm(H_init) # normalize
             H_init.shape += (1,)
@@ -102,7 +115,14 @@ def greedy(Y, components=((5, 2, 30), ), spl0_comps=0.1, iterations=5, njobs=N_J
             C.append(c)
 
             #R[wmask, :] = (R[wmask, :] - np.dot(W, H).T).clip(TINY_POSITIVE_NUMBER, np.inf)
-            R[wmask, :] = (R[wmask, :] - np.dot(W, H).T)
+            # subtract fitted patch from 'data' R and current rho
+            fitpatch = np.dot(W,H)
+            R[wmask, :] = (R[wmask, :] - fitpatch.T)
+            
+            blurpatch = blur_images(fitpatch.reshape(T, mask_w, mask_h),
+                    sigmagauss, njobs=njobs)
+
+            rho[wmask, :] -= blurpatch.reshape(T, mask_w*mask_h).T
 
 
     C = np.array(C)  # will be of shape k x T
@@ -120,6 +140,8 @@ def greedy(Y, components=((5, 2, 30), ), spl0_comps=0.1, iterations=5, njobs=N_J
     return A, C, b, f
 
 
+
+@log.log_profiling
 def blur_images(imagestack, sg, njobs=N_JOBS, joblib_tmp_folder=JOBLIB_TMP_FOLDER):
     ''' 2D Gaussian filter on all images of imagestack. '''
 
@@ -139,6 +161,7 @@ def blur_images(imagestack, sg, njobs=N_JOBS, joblib_tmp_folder=JOBLIB_TMP_FOLDE
     return np.array(bis)
 
 
+@log.log_profiling
 def _nmf_l0(V, W_init=None, H_init=None, spl0=0.6, iterations=10, k=1):
     '''
     '''
