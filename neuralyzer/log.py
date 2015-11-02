@@ -11,7 +11,7 @@ LOGGERNAME = 'neuralyzer'
 STDOUT_LOGLEVEL = 'DEBUG'
 FILE_LOGLEVEL = 'INFO'
 
-PROFILE = True
+PROFILE = False 
 
 LOGFILE = 'neuralyzer.log'
 
