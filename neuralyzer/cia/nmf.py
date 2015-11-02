@@ -304,7 +304,7 @@ class LARS(object):
         self.max_iter = max_iter
 
 
-    def fit(self, X, y, Xy=None, return_path=True, alpha_min=0.):
+    def fit(self, X, y, Xy=None, return_path=False, alpha_min=0.):
 
         self._alpha_min = alpha_min
 
