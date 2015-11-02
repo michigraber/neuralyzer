@@ -42,6 +42,9 @@ def greedy(Y, components=((5, 2, 30), ), spl0_comps=0.1, iterations=5, njobs=N_J
 
     WARNING !! we assume quadratic image shape
 
+
+    TODO : noise constrained nmf -> in order to not have to return the entire path
+
     '''
     logger.info('Initializing SMFF model with greedy algorithm.')
 
