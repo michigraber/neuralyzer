@@ -176,7 +176,7 @@ class SMFF(object):
             self._model_init['f'] = f
 
 
-    def fit_model(self, Y, copy_init=True):
+    def fit(self, Y, copy_init=True):
         ''' Fit the data to the model with the specified parameters.  '''
         self.logger.info('Fitting SMFF model to data Y. [Y] = (%s, %s)' % Y.shape)
         self._tap_model_init(copy=copy_init)
@@ -345,7 +345,7 @@ class SMFF(object):
 
 
     @staticmethod
-    def update_A_b(C, A, b, f, Y, pixel_noise, joblib_tmp_folder=JOBLIB_TMP_FOLDER, **kwargs):
+    def update_A_b(C, A, b, f, Y, pixel_noise, **kwargs):
         ''' Update the spatial components A and the background b.  '''
 
         logger = kwargs.get('logger', None)
@@ -357,14 +357,12 @@ class SMFF(object):
         njobs = kwargs.get('njobs', N_JOBS)
         if njobs is None:
             A_ = []
-            for pidx, sn in enumerate(noise):
+            for pidx, sn in enumerate(pixel_noise):
                 A_.append(nmf.do_lars_fit(H.T, Y[pidx], alpha=sn*np.sqrt(T)))
 
         elif type(njobs) == int:
                 sqrtT = np.sqrt(T)
-                # TODO : what about the temp folder now?
-                #A_ = Parallel(n_jobs=njobs, temp_folder=joblib_tmp_folder)(
-                A_ = Parallel(n_jobs=njobs)(
+                A_ = Parallel(n_jobs=njobs, max_nbytes=1e6)(
                         delayed(nmf.do_lars_fit)(
                             H.T, Y[pidx], alpha=pixel_noise[pidx]*sqrtT
                             )
