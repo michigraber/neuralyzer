@@ -129,7 +129,8 @@ def cvx_foopsi(y, w=None, p=2, noise_range=(.25, .5), solver='ECOS',
 
     b_ = b.value
     
-    return c__, events, b_, sn, g
+    # we're only interested in the real part of the solutions found 
+    return c__.real, events.real, b_.real, sn.real, g.real
 
 
 class CVXFoopsiError(Exception):
